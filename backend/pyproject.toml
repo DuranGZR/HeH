@@ -4,10 +4,12 @@ version = "0.1.0"
 description = "HEH Turkish query understanding and verified Trendyol search link API"
 requires-python = ">=3.12"
 dependencies = [
+    "alembic>=1.14.0,<2.0.0",
     "fastapi>=0.115.0,<1.0.0",
     "psycopg[binary]>=3.2.0,<4.0.0",
     "pydantic>=2.10.0,<3.0.0",
     "pydantic-settings>=2.7.0,<3.0.0",
+    "sqlalchemy>=2.0.36,<3.0.0",
     "uvicorn[standard]>=0.34.0,<1.0.0",
 ]
 
@@ -30,10 +32,11 @@ packages = ["src/heh_api"]
 [tool.ruff]
 target-version = "py312"
 line-length = 100
-src = ["src", "tests", "scripts"]
+src = ["src", "tests", "scripts", "alembic"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "S", "RUF"]
+ignore = ["RUF001", "RUF002", "RUF003"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["S101"]

@@ -1,0 +1,234 @@
+{
+  "provider": "trendyol",
+  "version": "2026.11.24.1",
+  "long_tail_policy": "prc_plus_q",
+  "global_colors": [
+    {
+      "canonical_key": "siyah",
+      "display_label": "Siyah",
+      "aliases": ["siyah"],
+      "url_param": "wcl",
+      "url_value": "14",
+      "status": "WEB_VERIFIED_PENDING_MOBILE",
+      "evidence_ref": "evidence/W1/d03-url-observations.json"
+    }
+  ],
+  "categories": [
+    {
+      "category_key": "erkek_mont",
+      "display_name": "Erkek Mont",
+      "aliases": ["erkek mont", "mont", "kaban"],
+      "wc_id": "118",
+      "wg_id": "2",
+      "gender_label": "Erkek",
+      "negative_supported": false,
+      "category_status": "WEB_VERIFIED_PENDING_MOBILE",
+      "evidence_ref": "evidence/W1/d03-url-observations.json",
+      "brands": [
+        {
+          "canonical_key": "mavi",
+          "display_label": "Mavi",
+          "aliases": ["mavi"],
+          "url_param": "wb",
+          "url_value": "43",
+          "status": "WEB_VERIFIED_PENDING_MOBILE",
+          "evidence_ref": "evidence/W1/d03-url-observations.json"
+        }
+      ],
+      "colors": [
+        {
+          "canonical_key": "siyah",
+          "display_label": "Siyah",
+          "aliases": ["siyah"],
+          "url_param": "wcl",
+          "url_value": "14",
+          "status": "WEB_VERIFIED_PENDING_MOBILE",
+          "evidence_ref": "evidence/W1/d03-url-observations.json"
+        }
+      ],
+      "sizes": [
+        {
+          "canonical_key": "m",
+          "display_label": "M",
+          "aliases": ["m", "m beden", "medium"],
+          "url_param": "vr",
+          "url_value": "size|group-m",
+          "status": "WEB_VERIFIED_PENDING_MOBILE",
+          "evidence_ref": "evidence/W1/d03-url-observations.json"
+        }
+      ]
+    },
+    {
+      "category_key": "bluetooth_kulaklik",
+      "display_name": "Bluetooth Kulaklık",
+      "aliases": ["bluetooth kulaklık", "bluetooth kulaklik", "kulaklık", "kulaklik"],
+      "wc_id": "108626",
+      "wg_id": null,
+      "gender_label": null,
+      "negative_supported": false,
+      "category_status": "WEB_VERIFIED_PENDING_MOBILE",
+      "evidence_ref": "evidence/W1/d03-url-observations.json",
+      "brands": [
+        {
+          "canonical_key": "sony",
+          "display_label": "Sony",
+          "aliases": ["sony"],
+          "url_param": "wb",
+          "url_value": "795",
+          "status": "WEB_VERIFIED_PENDING_MOBILE",
+          "evidence_ref": "evidence/W1/d03-url-observations.json"
+        },
+        {
+          "canonical_key": "jbl",
+          "display_label": "JBL",
+          "aliases": ["jbl"],
+          "url_param": "wb",
+          "url_value": "102285",
+          "status": "WEB_VERIFIED_PENDING_MOBILE",
+          "evidence_ref": "evidence/W1/d03-url-observations.json"
+        }
+      ],
+      "colors": [
+        {
+          "canonical_key": "siyah",
+          "display_label": "Siyah",
+          "aliases": ["siyah"],
+          "url_param": "wcl",
+          "url_value": "14",
+          "status": "WEB_VERIFIED_PENDING_MOBILE",
+          "evidence_ref": "evidence/W1/d03-url-observations.json"
+        }
+      ],
+      "sizes": []
+    },
+    {
+      "category_key": "spor_ayakkabi",
+      "display_name": "Spor Ayakkabı",
+      "aliases": ["spor ayakkabı", "spor ayakkabi", "ayakkabı", "ayakkabi"],
+      "wc_id": "109",
+      "wg_id": null,
+      "gender_label": null,
+      "negative_supported": false,
+      "category_status": "WEB_VERIFIED_PENDING_MOBILE",
+      "evidence_ref": "evidence/W1/d03-url-observations.json",
+      "brands": [
+        {
+          "canonical_key": "nike",
+          "display_label": "Nike",
+          "aliases": ["nike"],
+          "url_param": "wb",
+          "url_value": "44",
+          "status": "WEB_VERIFIED_PENDING_MOBILE",
+          "evidence_ref": "evidence/W1/d03-url-observations.json"
+        },
+        {
+          "canonical_key": "puma",
+          "display_label": "Puma",
+          "aliases": ["puma"],
+          "url_param": "wb",
+          "url_value": "160",
+          "status": "WEB_VERIFIED_PENDING_MOBILE",
+          "evidence_ref": "evidence/W1/d03-url-observations.json"
+        }
+      ],
+      "colors": [
+        {
+          "canonical_key": "siyah",
+          "display_label": "Siyah",
+          "aliases": ["siyah"],
+          "url_param": "wcl",
+          "url_value": "14",
+          "status": "WEB_VERIFIED_PENDING_MOBILE",
+          "evidence_ref": "evidence/W1/d03-url-observations.json"
+        }
+      ],
+      "sizes": [
+        {
+          "canonical_key": "42",
+          "display_label": "42",
+          "aliases": ["42", "42 numara"],
+          "url_param": "vr",
+          "url_value": "size|42",
+          "status": "WEB_VERIFIED_PENDING_MOBILE",
+          "evidence_ref": "evidence/W1/d03-url-observations.json"
+        }
+      ]
+    },
+    {
+      "category_key": "laptop",
+      "display_name": "Laptop",
+      "aliases": ["laptop", "dizüstü", "notebook"],
+      "wc_id": "103108",
+      "wg_id": null,
+      "gender_label": null,
+      "negative_supported": false,
+      "category_status": "WEB_VERIFIED_PENDING_MOBILE",
+      "evidence_ref": "evidence/W1/d03-url-observations.json",
+      "brands": [
+        {
+          "canonical_key": "lenovo",
+          "display_label": "Lenovo",
+          "aliases": ["lenovo"],
+          "url_param": "wb",
+          "url_value": "102323",
+          "status": "WEB_VERIFIED_PENDING_MOBILE",
+          "evidence_ref": "evidence/W1/d03-url-observations.json"
+        },
+        {
+          "canonical_key": "asus",
+          "display_label": "Asus",
+          "aliases": ["asus"],
+          "url_param": "wb",
+          "url_value": "101606",
+          "status": "WEB_VERIFIED_PENDING_MOBILE",
+          "evidence_ref": "evidence/W1/d03-url-observations.json"
+        }
+      ],
+      "colors": [],
+      "sizes": []
+    },
+    {
+      "category_key": "cep_telefonu",
+      "display_name": "Cep Telefonu",
+      "aliases": ["cep telefonu", "telefon", "akıllı telefon"],
+      "wc_id": "103498",
+      "wg_id": null,
+      "gender_label": null,
+      "negative_supported": false,
+      "category_status": "WEB_VERIFIED_PENDING_MOBILE",
+      "evidence_ref": "evidence/W1/d03-url-observations.json",
+      "brands": [
+        {
+          "canonical_key": "samsung",
+          "display_label": "Samsung",
+          "aliases": ["samsung"],
+          "url_param": "wb",
+          "url_value": "794",
+          "status": "WEB_VERIFIED_PENDING_MOBILE",
+          "evidence_ref": "evidence/W1/d03-url-observations.json"
+        },
+        {
+          "canonical_key": "apple",
+          "display_label": "Apple",
+          "aliases": ["apple", "iphone"],
+          "url_param": "wb",
+          "url_value": "101470",
+          "status": "WEB_VERIFIED_PENDING_MOBILE",
+          "evidence_ref": "evidence/W1/d03-url-observations.json"
+        }
+      ],
+      "colors": [
+        {
+          "canonical_key": "siyah",
+          "display_label": "Siyah",
+          "aliases": ["siyah"],
+          "url_param": "wcl",
+          "url_value": "14",
+          "status": "WEB_VERIFIED_PENDING_MOBILE",
+          "evidence_ref": "evidence/W1/d03-url-observations.json"
+        }
+      ],
+      "sizes": []
+    }
+  ]
+}

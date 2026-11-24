@@ -1,4 +1,4 @@
-"""Validated environment settings for the HEH API."""
+"""Validated environment settings and feature flags for the HEH API."""
 
 from functools import lru_cache
 from typing import Any, Literal
@@ -48,6 +48,11 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("HEH_DATABASE_URL", "DATABASE_URL"),
     )
     db_health_timeout_seconds: float = Field(default=1.0, gt=0.1, le=10.0)
+
+    # Feature flags (progressive capability gating)
+    enable_ml_reranker: bool = False
+    enable_account_sync: bool = False
+    enable_redirect_telemetry: bool = False
 
     @field_validator("database_url", mode="before")
     @classmethod
