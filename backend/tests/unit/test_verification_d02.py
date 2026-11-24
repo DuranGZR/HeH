@@ -83,7 +83,7 @@ def test_evidence_matrix_document_and_cli_validator(tmp_path: Path) -> None:
 
 def test_filter_verified_requires_mobile_app_confirmation() -> None:
     """Verify web-only evidence cannot be marked FILTER_VERIFIED."""
-    with pytest.raises(ValidationError, match="mobile_app_filter_active=True"):
+    with pytest.raises(ValidationError, match="requires both web and mobile confirmation"):
         UrlObservationRecord(
             id="bad-promoted",
             category_key="erkek_mont",
@@ -100,7 +100,7 @@ def test_filter_verified_requires_mobile_app_confirmation() -> None:
 
 def test_web_verified_pending_mobile_rejects_failed_web_check() -> None:
     """Verify failed web check cannot use WEB_VERIFIED_PENDING_MOBILE."""
-    with pytest.raises(ValidationError, match="web_filter_active=True"):
+    with pytest.raises(ValidationError, match="Failed record cannot be promoted"):
         UrlObservationRecord(
             id="bad-web-false",
             category_key="laptop",

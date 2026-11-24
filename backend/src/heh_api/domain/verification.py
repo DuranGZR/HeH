@@ -12,6 +12,8 @@ ALLOWED_PROVIDER_HOSTS: Final[frozenset[str]] = frozenset({"www.trendyol.com"})
 _FACET_PATH_PATTERN: Final[re.Pattern[str]] = re.compile(r"^/[a-z0-9-]+-x-[a-z0-9-]+$")
 
 RouteStrategyKind = Literal["canonical_search_query", "verified_facet_path"]
+FacetFieldKind = Literal["brand", "color", "size", "category", "gender", "attribute"]
+FacetOperatorKind = Literal["eq", "in", "not_in"]
 VerificationStatus = Literal[
     "FILTER_VERIFIED",
     "WEB_VERIFIED_PENDING_MOBILE",
@@ -43,6 +45,48 @@ def validate_provider_url(raw_url: str, route_strategy: RouteStrategyKind | None
     return raw_url
 
 
+def _ensure_non_empty_unique_tuple(values: tuple[str, ...], field_name: str) -> tuple[str, ...]:
+    """Ensure a string tuple contains non-empty unique entries."""
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for item in values:
+        stripped = item.strip()
+        if not stripped:
+            raise ValueError(f"{field_name} cannot contain blank entries")
+        if stripped in seen:
+            raise ValueError(f"{field_name} contains duplicate entry: {stripped}")
+        seen.add(stripped)
+        cleaned.append(stripped)
+    return tuple(cleaned)
+
+
+def _validate_promotion_gate(
+    *,
+    status: VerificationStatus,
+    web_ok: bool | None,
+    mobile_ok: bool | None,
+    has_proof: bool,
+    subject: str,
+    proof_desc: str,
+) -> None:
+    """Enforce honest web-before-mobile status promotion for URL and facet records."""
+    if web_ok is False and status in {"FILTER_VERIFIED", "WEB_VERIFIED_PENDING_MOBILE"}:
+        raise ValueError(f"Failed {subject} cannot be promoted to a verified status")
+    if status == "FILTER_VERIFIED":
+        if web_ok is not True or mobile_ok is not True:
+            raise ValueError(f"FILTER_VERIFIED {subject} requires both web and mobile confirmation")
+        if not has_proof:
+            raise ValueError(f"FILTER_VERIFIED {subject} requires {proof_desc}")
+    if status == "WEB_VERIFIED_PENDING_MOBILE":
+        if web_ok is not True or mobile_ok is not None:
+            raise ValueError(
+                f"WEB_VERIFIED_PENDING_MOBILE {subject} requires web confirmation and "
+                "mobile confirmation pending (None)"
+            )
+        if not has_proof:
+            raise ValueError(f"WEB_VERIFIED_PENDING_MOBILE {subject} requires {proof_desc}")
+
+
 class PriceBoundEvidence(BaseModel):
     """Typed monetary bounds observed in a Trendyol `prc` parameter."""
 
@@ -67,6 +111,42 @@ class PriceBoundEvidence(BaseModel):
         return self
 
 
+class FacetFilterEvidence(BaseModel):
+    """Verification evidence for a single non-price facet filter (brand, color, size, etc.)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    field: FacetFieldKind
+    operator: FacetOperatorKind
+    canonical_values: tuple[str, ...] = Field(min_length=1)
+    url_param: str | None = None
+    url_values: tuple[str, ...] = ()
+    web_selected: bool | None = None
+    mobile_app_selected: bool | None = None
+    status: VerificationStatus
+
+    @model_validator(mode="after")
+    def _validate_facet(self) -> "FacetFilterEvidence":
+        cleaned_values = _ensure_non_empty_unique_tuple(self.canonical_values, "canonical_values")
+        if self.operator == "eq" and len(cleaned_values) != 1:
+            raise ValueError("operator='eq' requires exactly one canonical value")
+
+        if self.url_values:
+            _ensure_non_empty_unique_tuple(self.url_values, "url_values")
+
+        has_url_param = bool(self.url_param and self.url_param.strip())
+        has_url_values = len(self.url_values) > 0
+        _validate_promotion_gate(
+            status=self.status,
+            web_ok=self.web_selected,
+            mobile_ok=self.mobile_app_selected,
+            has_proof=has_url_param and has_url_values,
+            subject="facet",
+            proof_desc="url_param and url_values",
+        )
+        return self
+
+
 class UrlObservationRecord(BaseModel):
     """Single manual QA observation entry for a Trendyol search or facet URL."""
 
@@ -78,6 +158,7 @@ class UrlObservationRecord(BaseModel):
     tested_url: str
     resolved_url: str | None = None
     price_bound: PriceBoundEvidence | None = None
+    facets: tuple[FacetFilterEvidence, ...] = ()
     web_filter_active: bool | None = None
     mobile_app_filter_active: bool | None = None
     overall_status: VerificationStatus
@@ -93,30 +174,33 @@ class UrlObservationRecord(BaseModel):
 
         has_evidence = bool(self.evidence_ref and self.evidence_ref.strip())
         has_timestamp = bool(self.tested_at and self.tested_at.strip())
+        _validate_promotion_gate(
+            status=self.overall_status,
+            web_ok=self.web_filter_active,
+            mobile_ok=self.mobile_app_filter_active,
+            has_proof=has_timestamp and has_evidence,
+            subject="record",
+            proof_desc="tested_at and evidence_ref",
+        )
 
-        if self.overall_status == "FILTER_VERIFIED":
-            if self.web_filter_active is not True or self.mobile_app_filter_active is not True:
-                raise ValueError(
-                    "FILTER_VERIFIED requires both web_filter_active=True and "
-                    "mobile_app_filter_active=True"
-                )
-            if not has_timestamp or not has_evidence:
-                raise ValueError("FILTER_VERIFIED requires tested_at and evidence_ref")
+        if self.overall_status == "FILTER_VERIFIED" and any(
+            facet.web_selected is not True
+            or facet.mobile_app_selected is not True
+            or facet.status != "FILTER_VERIFIED"
+            for facet in self.facets
+        ):
+            raise ValueError(
+                "FILTER_VERIFIED record requires all listed facets to be mobile+web verified"
+            )
 
-        if self.overall_status == "WEB_VERIFIED_PENDING_MOBILE":
-            if self.web_filter_active is not True or self.mobile_app_filter_active is not None:
-                raise ValueError(
-                    "WEB_VERIFIED_PENDING_MOBILE requires web_filter_active=True and "
-                    "mobile_app_filter_active=None"
-                )
-            if not has_timestamp or not has_evidence:
-                raise ValueError("WEB_VERIFIED_PENDING_MOBILE requires tested_at and evidence_ref")
-
-        if self.web_filter_active is False and self.overall_status in {
-            "FILTER_VERIFIED",
-            "WEB_VERIFIED_PENDING_MOBILE",
-        }:
-            raise ValueError("Failed web verification cannot be promoted to a verified status")
+        if self.overall_status == "WEB_VERIFIED_PENDING_MOBILE" and any(
+            facet.web_selected is not True
+            or facet.status not in {"FILTER_VERIFIED", "WEB_VERIFIED_PENDING_MOBILE"}
+            for facet in self.facets
+        ):
+            raise ValueError(
+                "WEB_VERIFIED_PENDING_MOBILE record cannot contain unselected or unsupported facets"
+            )
 
         return self
 
