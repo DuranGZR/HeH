@@ -27,6 +27,16 @@ def normalize_postgres_dsn(raw_dsn: str) -> str:
     raise ValueError("Unsupported PostgreSQL URL scheme")
 
 
+def to_sqlalchemy_postgres_dsn(raw_dsn: str) -> str:
+    """Normalize a validated PostgreSQL DSN into a SQLAlchemy psycopg v3 URI."""
+    cleaned = raw_dsn.strip()
+    if cleaned.startswith(_SQLALCHEMY_PSYCOPG_PREFIX):
+        return cleaned
+    if cleaned.startswith(_STANDARD_POSTGRES_PREFIX):
+        return f"{_SQLALCHEMY_PSYCOPG_PREFIX}{cleaned[len(_STANDARD_POSTGRES_PREFIX) :]}"
+    raise ValueError("Unsupported PostgreSQL URL scheme")
+
+
 def check_database_health(
     database_url: SecretStr | None,
     *,

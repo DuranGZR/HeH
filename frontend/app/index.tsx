@@ -1,89 +1,312 @@
 import { useRouter } from "expo-router";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useState } from "react";
+import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { COLORS } from "@/theme/colors";
+import {
+  MoreMenuModal,
+  TextSearchComposer,
+  canSubmitSearchQuery,
+  type HomeInputMode,
+} from "@/features/search";
+import { useHehTheme } from "@/theme";
 
-/** Minimal home screen with explicit mode entry (no auto-recording on mount). */
+/**
+ * Minimalist mic-centered Home screen (`SCREEN-01` / `SCREEN-03` / `SCREEN-05`).
+ * Zero bottom tab bars; no auto-recording on mount; seamless inline voice/text mode switching.
+ */
 export default function HomeScreen() {
   const router = useRouter();
+  const { palette, typography, spacing, radius, borderWidth, touchTarget, layout, icons, hitSlop } =
+    useHehTheme();
+
+  const [inputMode, setInputMode] = useState<HomeInputMode>("voice");
+  const [queryText, setQueryText] = useState<string>("");
+  const [menuOpen, setMenuOpen] = useState<boolean>(false);
+
+  const wordmarkStyle =
+    layout.tier === "compact" && layout.isShortHeight
+      ? typography.wordmarkCompact
+      : typography.wordmarkHero;
+
+  const openVoiceSearch = (): void => {
+    router.push({ pathname: "/search", params: { mode: "voice" } });
+  };
+
+  const openTextModeOrSubmit = (): void => {
+    if (inputMode !== "text") {
+      setInputMode("text");
+      return;
+    }
+    if (canSubmitSearchQuery(queryText)) {
+      router.push({ pathname: "/search", params: { mode: "text", q: queryText.trim() } });
+    }
+  };
 
   return (
-    <SafeAreaView style={styles.container} testID="home-screen">
-      <View style={styles.center}>
-        <Text style={styles.wordmark}>heh.</Text>
-        <Text style={styles.tagline}>Söyle, aradığını hemen bul.</Text>
-      </View>
-      <View style={styles.actions}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Sesli ara"
-          onPress={() => router.push({ pathname: "/search", params: { mode: "voice" } })}
-          style={styles.primaryButton}
+    <SafeAreaView
+      style={[styles.screen, { backgroundColor: palette.background }]}
+      testID="home-screen"
+    >
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={styles.screen}
+      >
+        <View
+          style={[
+            styles.frame,
+            {
+              maxWidth: layout.maxContentWidth,
+              paddingHorizontal: layout.horizontalPadding,
+              paddingVertical: layout.verticalPadding,
+            },
+          ]}
+          testID="home-frame"
         >
-          <Text style={styles.primaryLabel}>Sesli Ara</Text>
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Yazarak ara"
-          onPress={() => router.push({ pathname: "/search", params: { mode: "text" } })}
-          style={styles.secondaryButton}
-        >
-          <Text style={styles.secondaryLabel}>Yazarak Ara</Text>
-        </Pressable>
-      </View>
+          {/* Minimal header: compact brand + top-right three-dots menu (no tab bar) */}
+          <View style={styles.headerRow}>
+            <Text
+              accessibilityRole="header"
+              maxFontSizeMultiplier={typography.wordmarkCompact.maxFontSizeMultiplier}
+              style={[typography.wordmarkCompact, { color: palette.textPrimary }]}
+            >
+              heh.
+            </Text>
+            <Pressable
+              accessibilityHint="Geçmiş, tema ve gizlilik menüsünü açar"
+              accessibilityLabel="Diğer seçenekler"
+              accessibilityRole="button"
+              hitSlop={hitSlop}
+              onPress={() => setMenuOpen(true)}
+              style={({ pressed }) => [
+                styles.moreButton,
+                {
+                  minWidth: touchTarget.minimum,
+                  minHeight: touchTarget.minimum,
+                  borderRadius: radius.pill,
+                  backgroundColor: pressed ? palette.surfacePressed : palette.surfaceMuted,
+                },
+              ]}
+              testID="home-more-button"
+            >
+              <Text
+                accessible={false}
+                style={[typography.sectionTitle, { color: palette.iconPrimary }]}
+              >
+                {icons.specs.more.glyphFallback}
+              </Text>
+            </Pressable>
+          </View>
+
+          {/* Center workspace: Voice hero mic OR inline TextSearchComposer */}
+          {inputMode === "voice" ? (
+            <View style={[styles.centerHero, { gap: spacing.sm }]}>
+              <Text
+                maxFontSizeMultiplier={wordmarkStyle.maxFontSizeMultiplier}
+                style={[typography.heroTitle, { color: palette.textPrimary, textAlign: "center" }]}
+              >
+                Ne arıyorsun?
+              </Text>
+              <Text
+                maxFontSizeMultiplier={typography.body.maxFontSizeMultiplier}
+                style={[
+                  typography.body,
+                  { color: palette.textSecondary, textAlign: "center", marginBottom: spacing.md },
+                ]}
+              >
+                Söyle, aradığını hemen bul.
+              </Text>
+
+              <Pressable
+                accessibilityHint="Dokunduğunda mikrofon izni doğrulanarak sesli arama açılır"
+                accessibilityLabel="Sesli ara"
+                accessibilityRole="button"
+                hitSlop={hitSlop}
+                onPress={openVoiceSearch}
+                style={({ pressed }) => [
+                  styles.heroMicButton,
+                  {
+                    width: layout.heroMicSize,
+                    height: layout.heroMicSize,
+                    minHeight: touchTarget.minimum,
+                    borderRadius: radius.pill,
+                    borderWidth: borderWidth.control,
+                    borderColor: palette.ctaBackground,
+                    backgroundColor: pressed ? palette.ctaPressed : palette.ctaBackground,
+                  },
+                ]}
+                testID="home-voice-button"
+              >
+                <Text
+                  accessible={false}
+                  style={{ fontSize: icons.sizes.hero, color: palette.iconOnInverse }}
+                >
+                  {icons.specs.mic.glyphFallback}
+                </Text>
+              </Pressable>
+
+              <Text
+                maxFontSizeMultiplier={typography.caption.maxFontSizeMultiplier}
+                style={[typography.caption, { color: palette.textMuted, marginTop: spacing.xs }]}
+                testID="home-voice-consent-note"
+              >
+                Mikrofon yalnızca sen dokunduğunda açılır.
+              </Text>
+            </View>
+          ) : (
+            <View style={[styles.centerComposer, { gap: spacing.md }]}>
+              <Text
+                maxFontSizeMultiplier={typography.heroTitle.maxFontSizeMultiplier}
+                style={[typography.heroTitle, { color: palette.textPrimary }]}
+              >
+                Aradığını yaz
+              </Text>
+              <TextSearchComposer
+                onChangeQuery={setQueryText}
+                onSubmit={openTextModeOrSubmit}
+                query={queryText}
+              />
+            </View>
+          )}
+
+          {/* Bottom inline input mode switcher (no bottom navigation tabs) */}
+          <View
+            accessibilityRole="tablist"
+            style={[
+              styles.modeSwitcher,
+              {
+                borderRadius: radius.pill,
+                borderWidth: borderWidth.hairline,
+                borderColor: palette.borderControl,
+                backgroundColor: palette.surfaceMuted,
+                padding: spacing.xxs,
+                gap: spacing.xxs,
+              },
+            ]}
+            testID="home-mode-switcher"
+          >
+            <Pressable
+              accessibilityLabel="Yazarak ara"
+              accessibilityRole="button"
+              accessibilityState={{ selected: inputMode === "text" }}
+              onPress={() => setInputMode("text")}
+              style={[
+                styles.modeOption,
+                {
+                  minHeight: touchTarget.minimum,
+                  borderRadius: radius.pill,
+                  backgroundColor:
+                    inputMode === "text" ? palette.ctaBackground : palette.surfaceMuted,
+                  gap: spacing.xs,
+                },
+              ]}
+              testID="home-text-button"
+            >
+              <Text
+                accessible={false}
+                style={[
+                  typography.caption,
+                  { color: inputMode === "text" ? palette.iconOnInverse : palette.iconPrimary },
+                ]}
+              >
+                {icons.specs.keyboard.glyphFallback}
+              </Text>
+              <Text
+                maxFontSizeMultiplier={typography.chip.maxFontSizeMultiplier}
+                style={[
+                  typography.chip,
+                  { color: inputMode === "text" ? palette.ctaText : palette.textPrimary },
+                ]}
+              >
+                Yazarak
+              </Text>
+            </Pressable>
+
+            <Pressable
+              accessibilityLabel="Sesli moda geç"
+              accessibilityRole="button"
+              accessibilityState={{ selected: inputMode === "voice" }}
+              onPress={() => setInputMode("voice")}
+              style={[
+                styles.modeOption,
+                {
+                  minHeight: touchTarget.minimum,
+                  borderRadius: radius.pill,
+                  backgroundColor:
+                    inputMode === "voice" ? palette.ctaBackground : palette.surfaceMuted,
+                  gap: spacing.xs,
+                },
+              ]}
+              testID="home-mode-voice-button"
+            >
+              <Text
+                accessible={false}
+                style={[
+                  typography.caption,
+                  { color: inputMode === "voice" ? palette.iconOnInverse : palette.iconPrimary },
+                ]}
+              >
+                {icons.specs.waveform.glyphFallback}
+              </Text>
+              <Text
+                maxFontSizeMultiplier={typography.chip.maxFontSizeMultiplier}
+                style={[
+                  typography.chip,
+                  { color: inputMode === "voice" ? palette.ctaText : palette.textPrimary },
+                ]}
+              >
+                Sesli
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+
+      <MoreMenuModal onClose={() => setMenuOpen(false)} visible={menuOpen} />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  screen: {
     flex: 1,
-    backgroundColor: COLORS.white,
+  },
+  frame: {
+    flex: 1,
+    width: "100%",
+    alignSelf: "center",
     justifyContent: "space-between",
   },
-  center: {
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  moreButton: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  centerHero: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 24,
   },
-  wordmark: {
-    color: COLORS.black,
-    fontSize: 40,
-    fontWeight: "600",
-    letterSpacing: -1,
+  heroMicButton: {
+    alignItems: "center",
+    justifyContent: "center",
   },
-  tagline: {
-    color: COLORS.black,
-    fontSize: 16,
-    marginTop: 8,
+  centerComposer: {
+    flex: 1,
+    justifyContent: "center",
   },
-  actions: {
-    paddingHorizontal: 24,
-    paddingBottom: 24,
-    gap: 10,
-  },
-  primaryButton: {
-    backgroundColor: COLORS.black,
-    borderRadius: 12,
-    paddingVertical: 14,
+  modeSwitcher: {
+    flexDirection: "row",
     alignItems: "center",
   },
-  primaryLabel: {
-    color: COLORS.white,
-    fontSize: 15,
-    fontWeight: "600",
-  },
-  secondaryButton: {
-    backgroundColor: COLORS.surfaceMuted,
-    borderRadius: 12,
-    paddingVertical: 14,
+  modeOption: {
+    flex: 1,
+    flexDirection: "row",
     alignItems: "center",
-  },
-  secondaryLabel: {
-    color: COLORS.black,
-    fontSize: 15,
-    fontWeight: "500",
+    justifyContent: "center",
   },
 });

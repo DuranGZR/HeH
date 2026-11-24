@@ -45,6 +45,9 @@ jobs:
       - name: Run unit tests
         run: uv run pytest -q
 
+      - name: Verify OpenAPI TypeScript contracts parity
+        run: uv run python scripts/generate_contracts.py --check
+
   postgres-readiness:
     name: PostgreSQL Readiness & Compose
     runs-on: ubuntu-latest
@@ -80,11 +83,11 @@ jobs:
         working-directory: backend
         run: uv sync --frozen --dev
 
-      - name: Verify live PostgreSQL /health/ready integration
+      - name: Verify live PostgreSQL migrations & /health/ready integration
         working-directory: backend
         env:
           HEH_DATABASE_URL: postgresql://heh:heh_ci_ephemeral_pg_password@127.0.0.1:5432/heh
-        run: uv run pytest -m integration -q
+        run: uv run alembic upgrade head && uv run pytest -m integration -q
 
   frontend-quality:
     name: Frontend Quality

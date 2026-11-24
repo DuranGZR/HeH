@@ -12,7 +12,11 @@ from pydantic import SecretStr, ValidationError
 
 from heh_api import __version__
 from heh_api.core.config import Settings
-from heh_api.infrastructure.db import check_database_health, normalize_postgres_dsn
+from heh_api.infrastructure.db import (
+    check_database_health,
+    normalize_postgres_dsn,
+    to_sqlalchemy_postgres_dsn,
+)
 from heh_api.main import create_app
 
 
@@ -71,10 +75,11 @@ def test_health_live_returns_ok() -> None:
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+    assert "X-Request-ID" in response.headers
 
 
-def test_health_ready_returns_zero_db_bootstrap_status() -> None:
-    """Verify readiness endpoint reports Zero-DB readiness independently of PostgreSQL."""
+def test_health_ready_returns_zero_db_ready_snapshot_status() -> None:
+    """Verify readiness endpoint reports loaded snapshot independently of PostgreSQL."""
     client = TestClient(create_app(Settings(env="test", nlp_mode="rules")))
     response = client.get("/api/v1/health/ready")
 
@@ -83,7 +88,7 @@ def test_health_ready_returns_zero_db_bootstrap_status() -> None:
         "status": "ok",
         "version": __version__,
         "nlp_mode": "rules",
-        "mapping_snapshot": "bootstrap",
+        "mapping_snapshot": "ready",
         "db_status": "not_configured",
     }
 
@@ -108,6 +113,7 @@ def test_health_ready_reports_ok_and_degraded_without_breaking_zero_db(
 
     assert ok_response.status_code == 200
     assert ok_response.json()["status"] == "ok"
+    assert ok_response.json()["mapping_snapshot"] == "ready"
     assert ok_response.json()["db_status"] == "ok"
     assert fake_cursor.executed_sql == ["SELECT 1"]
 
@@ -151,11 +157,15 @@ def test_check_database_health_closed_local_port_returns_degraded() -> None:
     assert status == "degraded"
 
 
-def test_normalize_postgres_dsn_handles_sqlalchemy_scheme() -> None:
-    """Verify postgresql+psycopg DSNs normalize to postgresql:// while invalid ones raise."""
+def test_postgres_dsn_normalizers_cover_psycopg_and_sqlalchemy() -> None:
+    """Verify DSN normalizers bridge libpq and SQLAlchemy psycopg3 cleanly."""
     assert (
         normalize_postgres_dsn("postgresql+psycopg://heh:local@127.0.0.1:5432/heh")
         == "postgresql://heh:local@127.0.0.1:5432/heh"
+    )
+    assert (
+        to_sqlalchemy_postgres_dsn("postgresql://heh:local@127.0.0.1:5432/heh")
+        == "postgresql+psycopg://heh:local@127.0.0.1:5432/heh"
     )
     with pytest.raises(ValueError, match="Unsupported PostgreSQL URL scheme"):
         normalize_postgres_dsn("sqlite:///tmp/test.db")
