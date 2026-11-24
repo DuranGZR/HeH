@@ -3,7 +3,7 @@ HEH — MASTER ENGINEERING PLAN
 Versiyon: 2.1 — VERTICAL-SLICE FIRST / ZERO-DB HOT PATH / ONNX HYBRID NLP (revize teknik anaplan)
 Tarih: 24 Kasım 2026
 Sahip: Tek geliştirici | Kapasite: 5 saat/iş günü | Hedef platformlar: iOS + Android
-Durum: AKTİF GELİŞTİRME — W1 / D01 TAMAMLANDI (sıradaki: D02).
+Durum: AKTİF GELİŞTİRME — W1 / D01–D02 TAMAMLANDI (sıradaki: D03).
 
 ======================================================================
 00. DOKÜMANIN AMACI, KULLANIMI VE YÖNETİMİ
@@ -1682,10 +1682,10 @@ D01 — Monorepo, branch kuralları ve ilk CI [TAMAMLANDI — 24.11.2026]
   Dosya/kanıt: .github/workflows/ci.yml; frontend/; backend/; docs/adr/0001-repo.md; pnpm-lock.yaml; backend/uv.lock.
   Test/kabul: PASS — Kırmızıdan yeşile (red-to-green) doğrulandı; ruff/mypy/pytest (5/5) ve prettier/eslint/tsc/jest (2/2) 0 hata.
 
-D02 — Trendyol URL risk POC: vitrin kategoriler ve fiyat/path analizi
-  İş: 3-5 vitrin kategoride hem /sr?... query hem SEO slug + -x- birleşik facet path davranışının kanıtı; scraping yapmadan manuel test.
-  Dosya/kanıt: docs/quality/trendyol-matrix-v0.md; evidence/W1.
-  Test/kabul: Yeniden açılan linkte gerçekten fiyat filtresi aktif mi? -x- ve /sr farkı belgeli.
+D02 — Trendyol URL risk POC: vitrin kategoriler ve fiyat/path analizi [TAMAMLANDI — 24.11.2026]
+  İş: 4 vitrin kategoride (Erkek Mont, Spor Ayakkabı, Bluetooth Kulaklık, Laptop) /sr?... query, prc=<min>-*, prc=<min>-<max> ve -x- facet path davranışının manuel web tarayıcı kanıtı; scraping yapılmadı.
+  Dosya/kanıt: docs/quality/trendyol-matrix-v0.md; evidence/W1/d02-url-observations.json; evidence/W1/d02-laptop-prc-20000-30000.png; backend/src/heh_api/domain/verification.py; scripts/verify_filter_matrix.py.
+  Test/kabul: PASS — 7/7 kayıt WEB_VERIFIED_PENDING_MOBILE (erkek-mont-x-g2-c118?prc=0-3000 ve /sr?wg=2&wc=118&prc=2000-* dahil), pytest 13/13, ruff/mypy/frontend 0 hata.
 
 D03 — Vitrin kategori marka, renk, beden ve OR risk POC
   İş: Sony+JBL OR, siyah renk, M beden, fiyat+marka kombine; tek tek ve birlikte seçili filtre durumu.
