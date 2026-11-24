@@ -34,50 +34,53 @@ jobs:
         run: uv sync --frozen --dev
 
       - name: Check formatting with Ruff
-        run: uv run ruff format --check . ../scripts
+        run: uv run ruff format --check .
 
       - name: Lint with Ruff
-        run: uv run ruff check . ../scripts
+        run: uv run ruff check .
 
       - name: Typecheck with Mypy
-        run: uv run mypy src tests ../scripts/verify_filter_matrix.py
+        run: uv run mypy src tests scripts
 
       - name: Run unit tests
         run: uv run pytest -q
 
-      - name: Validate Trendyol filter evidence matrix
-        run: uv run python ../scripts/verify_filter_matrix.py ../evidence/W1/d02-url-observations.json
-
   frontend-quality:
     name: Frontend Quality
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
     steps:
       - name: Checkout repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Set up pnpm
         uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: "12.10.1"
 
       - name: Set up Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version-file: ".node-version"
+          node-version-file: "frontend/.node-version"
           cache: "pnpm"
+          cache-dependency-path: "frontend/pnpm-lock.yaml"
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Check formatting with Prettier
-        run: pnpm --filter heh-mobile format:check
+        run: pnpm format:check
 
       - name: Lint with ESLint
-        run: pnpm --filter heh-mobile lint
+        run: pnpm lint
 
       - name: Typecheck with TypeScript
-        run: pnpm --filter heh-mobile typecheck
+        run: pnpm typecheck
 
       - name: Run unit tests
-        run: pnpm --filter heh-mobile test -- --ci
+        run: pnpm test:ci
 
   ci-gate:
     name: CI Gate

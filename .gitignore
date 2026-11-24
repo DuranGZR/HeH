@@ -1,3 +1,9 @@
+# Local-only planning, design assets, internal docs, and manual QA evidence
+/HEH_MASTER_PLAN*.txt
+/uygulama-görselleri.png
+/docs/
+/evidence/
+
 # Environment & secrets
 .env
 .env.*

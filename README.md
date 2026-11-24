@@ -8,8 +8,7 @@
 
 - `frontend/`: React Native (`0.88`) + Expo SDK `58` + strict TypeScript mobil istemci
 - `backend/`: Python (`>=3.12`) + `uv` + FastAPI + Pydantic v2 API ve çekirdek domain/NLP katmanı
-- `docs/`: Mimari Karar Kayıtları (`docs/adr/`), kontratlar ve kalite raporları
-- `.github/`: İlk günden zorunlu CI (`ci.yml`), Dependabot ve PR/Issue şablonları
+- `.github/`: Zorunlu CI (`ci.yml`), Dependabot ve PR/Issue şablonları
 
 ## Modül Sınırları
 
@@ -28,7 +27,7 @@ cd backend
 uv sync --dev
 uv run ruff format --check .
 uv run ruff check .
-uv run mypy src tests
+uv run mypy src tests scripts
 uv run pytest -q
 uv run uvicorn heh_api.main:app --reload
 ```
@@ -36,13 +35,10 @@ uv run uvicorn heh_api.main:app --reload
 ### Frontend (`frontend/`)
 
 ```bash
+cd frontend
 pnpm install --frozen-lockfile
-pnpm --filter heh-mobile format:check
-pnpm --filter heh-mobile lint
-pnpm --filter heh-mobile typecheck
-pnpm --filter heh-mobile test -- --ci
+pnpm format:check
+pnpm lint
+pnpm typecheck
+pnpm test:ci
 ```
-
-## Güvenlik ve Gizlilik
-
-Bkz. [SECURITY.md](SECURITY.md) ve [CONTRIBUTING.md](CONTRIBUTING.md). `.env` dosyaları, anahtarlar ve model ağırlıkları Git'e eklenmez.

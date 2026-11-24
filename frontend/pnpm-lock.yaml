@@ -164,9 +164,7 @@ settings:
 
 importers:
 
-  .: {}
-
-  frontend:
+  .:
     dependencies:
       expo:
         specifier: ~58.0.26

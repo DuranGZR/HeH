@@ -12,7 +12,7 @@ from pydantic import ValidationError
 from heh_api.domain.verification import EvidenceMatrixDocument
 
 _DEFAULT_MATRIX = (
-    Path(__file__).resolve().parent.parent / "evidence" / "W1" / "d02-url-observations.json"
+    Path(__file__).resolve().parents[2] / "evidence" / "W1" / "d02-url-observations.json"
 )
 
 
@@ -25,7 +25,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "files",
         nargs="*",
         default=[str(_DEFAULT_MATRIX)],
-        help="Path(s) to evidence JSON files (default: evidence/W1/d02-url-observations.json)",
+        help="Path(s) to evidence JSON files (default: ../evidence/W1/d02-url-observations.json)",
     )
     return parser.parse_args(argv)
 
