@@ -1,10 +1,12 @@
-"""Pytest configuration and offline network isolation guards."""
+"""Pytest configuration and offline network/environment isolation guards."""
 
 import socket
 from collections.abc import Iterator
 from typing import Any
 
 import pytest
+
+from heh_api.core.config import get_settings
 
 _ALLOWED_LOCAL_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
 
@@ -36,3 +38,17 @@ def isolate_external_network(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     monkeypatch.setattr(socket.socket, "connect", guarded_connect)
     monkeypatch.setattr(socket.socket, "connect_ex", guarded_connect_ex)
     yield
+
+
+@pytest.fixture(autouse=True)
+def isolate_offline_db_settings(
+    request: pytest.FixtureRequest,
+    monkeypatch: pytest.MonkeyPatch,
+) -> Iterator[None]:
+    """Prevent local .env DB settings from affecting non-integration unit tests."""
+    if request.node.get_closest_marker("integration") is None:
+        monkeypatch.setenv("HEH_DATABASE_URL", "")
+        monkeypatch.setenv("DATABASE_URL", "")
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()

@@ -16,6 +16,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         docs_url="/docs" if resolved_settings.env == "development" else None,
         redoc_url=None,
     )
+    if settings is not None:
+        application.dependency_overrides[get_settings] = lambda: resolved_settings
     application.include_router(api_v1_router)
     return application
 

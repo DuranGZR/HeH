@@ -45,6 +45,47 @@ jobs:
       - name: Run unit tests
         run: uv run pytest -q
 
+  postgres-readiness:
+    name: PostgreSQL Readiness & Compose
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: heh
+          POSTGRES_USER: heh
+          POSTGRES_PASSWORD: heh_ci_ephemeral_pg_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U heh -d heh"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Validate local PostgreSQL Compose definition
+        run: docker compose -f infrastructure/docker-compose.yml config -q
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: "backend/uv.lock"
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: uv sync --frozen --dev
+
+      - name: Verify live PostgreSQL /health/ready integration
+        working-directory: backend
+        env:
+          HEH_DATABASE_URL: postgresql://heh:heh_ci_ephemeral_pg_password@127.0.0.1:5432/heh
+        run: uv run pytest -m integration -q
+
   frontend-quality:
     name: Frontend Quality
     runs-on: ubuntu-latest
@@ -84,13 +125,13 @@ jobs:
 
   ci-gate:
     name: CI Gate
-    needs: [backend-quality, frontend-quality]
+    needs: [backend-quality, postgres-readiness, frontend-quality]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Verify required quality jobs passed
         run: |
-          if [ "${{ needs.backend-quality.result }}" != "success" ] || [ "${{ needs.frontend-quality.result }}" != "success" ]; then
-            echo "Required CI checks failed: backend=${{ needs.backend-quality.result }}, frontend=${{ needs.frontend-quality.result }}"
+          if [ "${{ needs.backend-quality.result }}" != "success" ] || [ "${{ needs.postgres-readiness.result }}" != "success" ] || [ "${{ needs.frontend-quality.result }}" != "success" ]; then
+            echo "Required CI checks failed: backend=${{ needs.backend-quality.result }}, postgres=${{ needs.postgres-readiness.result }}, frontend=${{ needs.frontend-quality.result }}"
             exit 1
           fi

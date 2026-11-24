@@ -1,0 +1,27 @@
+# Local-only PostgreSQL 17 service for account/history/audit development.
+# Core search routes stay Zero-DB and do not require this container at runtime.
+# Start: docker compose -f infrastructure/docker-compose.yml up -d
+# If port 5432 is already in use on host: HEH_POSTGRES_PORT=5433 docker compose -f infrastructure/docker-compose.yml up -d
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: heh-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${HEH_POSTGRES_DB:-heh}
+      POSTGRES_USER: ${HEH_POSTGRES_USER:-heh}
+      POSTGRES_PASSWORD: ${HEH_POSTGRES_PASSWORD:-heh_local_dev}
+    ports:
+      - "127.0.0.1:${HEH_POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - heh_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+volumes:
+  heh_postgres_data:

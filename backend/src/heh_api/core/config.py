@@ -1,10 +1,30 @@
 """Validated environment settings for the HEH API."""
 
 from functools import lru_cache
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import Field, SecretStr
+from pydantic import AliasChoices, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_POSTGRES_DSN_PREFIXES = ("postgresql://", "postgresql+psycopg://")
+
+
+def _extract_non_empty_postgres_dsn(raw_value: Any) -> str | None:
+    """Validate optional PostgreSQL URLs without reflecting credential substrings on error."""
+    if raw_value is None:
+        return None
+    if isinstance(raw_value, SecretStr):
+        candidate = raw_value.get_secret_value().strip()
+    elif isinstance(raw_value, str):
+        candidate = raw_value.strip()
+    else:
+        raise ValueError("database_url must be a PostgreSQL connection string")
+
+    if not candidate:
+        return None
+    if not candidate.startswith(_POSTGRES_DSN_PREFIXES):
+        raise ValueError("database_url must start with 'postgresql://' or 'postgresql+psycopg://'")
+    return candidate
 
 
 class Settings(BaseSettings):
@@ -23,6 +43,16 @@ class Settings(BaseSettings):
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     nlp_mode: Literal["rules", "shadow", "hybrid"] = "rules"
     secret_key: SecretStr | None = None
+    database_url: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices("HEH_DATABASE_URL", "DATABASE_URL"),
+    )
+    db_health_timeout_seconds: float = Field(default=1.0, gt=0.1, le=10.0)
+
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def _validate_database_url(cls, value: Any) -> str | None:
+        return _extract_non_empty_postgres_dsn(value)
 
 
 @lru_cache(maxsize=1)
