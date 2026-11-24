@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  backend-quality:
+    name: Backend Quality
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: "backend/uv.lock"
+
+      - name: Install backend dependencies
+        run: uv sync --frozen --dev
+
+      - name: Check formatting with Ruff
+        run: uv run ruff format --check .
+
+      - name: Lint with Ruff
+        run: uv run ruff check .
+
+      - name: Typecheck with Mypy
+        run: uv run mypy src tests
+
+      - name: Run unit tests
+        run: uv run pytest -q
+
+  frontend-quality:
+    name: Frontend Quality
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: ".node-version"
+          cache: "pnpm"
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check formatting with Prettier
+        run: pnpm --filter heh-mobile format:check
+
+      - name: Lint with ESLint
+        run: pnpm --filter heh-mobile lint
+
+      - name: Typecheck with TypeScript
+        run: pnpm --filter heh-mobile typecheck
+
+      - name: Run unit tests
+        run: pnpm --filter heh-mobile test -- --ci
+
+  ci-gate:
+    name: CI Gate
+    needs: [backend-quality, frontend-quality]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify required quality jobs passed
+        run: |
+          if [ "${{ needs.backend-quality.result }}" != "success" ] || [ "${{ needs.frontend-quality.result }}" != "success" ]; then
+            echo "Required CI checks failed: backend=${{ needs.backend-quality.result }}, frontend=${{ needs.frontend-quality.result }}"
+            exit 1
+          fi

@@ -1,0 +1,16 @@
+{
+  "name": "heh-workspace",
+  "private": true,
+  "packageManager": "pnpm@12.10.1",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "format": "pnpm --filter heh-mobile format",
+    "format:check": "pnpm --filter heh-mobile format:check",
+    "lint": "pnpm --filter heh-mobile lint",
+    "typecheck": "pnpm --filter heh-mobile typecheck",
+    "test": "pnpm --filter heh-mobile test",
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test"
+  }
+}

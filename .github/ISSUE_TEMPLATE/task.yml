@@ -1,0 +1,34 @@
+name: Mühendislik Görevi
+description: HEH Master Plan kapsamındaki günlük veya gate bazlı görev kaydı
+title: "[D00] "
+labels: ["task"]
+body:
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Öncelik
+      options:
+        - P0
+        - P1
+        - P2
+    validations:
+      required: true
+  - type: input
+    id: plan_ref
+    attributes:
+      label: Master Plan Referansı (Gün / Gate)
+      placeholder: "Örn. W1 / D02 / GATE-0"
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Kabul Kriterleri
+      placeholder: "- [ ] ..."
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Test ve Kanıt
+      placeholder: "Çalıştırılan komutlar, loglar veya ekran kanıtları"

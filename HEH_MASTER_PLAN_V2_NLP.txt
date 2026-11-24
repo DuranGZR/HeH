@@ -1,0 +1,2422 @@
+HEH — MASTER ENGINEERING PLAN
+Ürün gereksinimleri · Hibrit Türkçe NLP/R&D · Mimari · Veri/eval · MLOps · CI/CD · 90 iş günü
+Versiyon: 2.1 — VERTICAL-SLICE FIRST / ZERO-DB HOT PATH / ONNX HYBRID NLP (revize teknik anaplan)
+Tarih: 24 Kasım 2026
+Sahip: Tek geliştirici | Kapasite: 5 saat/iş günü | Hedef platformlar: iOS + Android
+Durum: AKTİF GELİŞTİRME — W1 / D01 TAMAMLANDI (sıradaki: D02).
+
+======================================================================
+00. DOKÜMANIN AMACI, KULLANIMI VE YÖNETİMİ
+======================================================================
+Bu belge bir fikir listesi değildir. HEH'i tek kişiyle, sürdürülebilir mühendislik disipliniyle,
+her gün GitHub'a gönderilerek geliştirilecek ve mağaza incelemesine hazırlanacak bir ürün olarak
+ele alan uygulama sözleşmesidir.
+
+Daha önce kullanılan oku.txt yaklaşımından alınan iyi yönler:
+- Tek seçilmiş teknoloji yığını ve kontrat.
+- Ayrıştırılmış modüller, klasör yapısı, deterministik kurulum.
+- Günlük teslimatlar, otomatik testler, ölçülen kalite, açık kapsam dışı listesi.
+
+Bilinçli olarak değiştirilenler:
+- CI ilk gün; CD kademeli. 26. güne ertelenmez.
+- En kritik dış bağımlılık (Trendyol URL filtreleri) ilk haftadan sınanır; V1 kapsamı
+  5-8 vitrin kategoride derin doğrulama + diğer tüm kategorilerde dürüst fiyat+metin
+  fallback'i ('Dar ve Derin') ve TrendyolRouteStrategy (-x- facet path / /sr query) ile yönetilir.
+- RAG veya gereksiz LLM stack'i kopyalanmaz; önce W4-W6'da deterministik M0 baseline ile
+  çalışan uçtan uca mobil dikey dilim (Text + gerçek cihaz STT + tek-istekli önizleme)
+  ayağa kaldırılır, ardından W7-W11'de gerçek kullanım/STT verisi üzerine kurulu ayrı veri,
+  daraltılmış rollü DistilBERTurk eğitimi, ONNX Runtime (INT8/FP16) ve MLOps hattı işletilir.
+- Çekirdek misafir arama hattı (/search/parse, /search/resolve) %100 Zero-DB bellek-içi
+  snapshot üzerinde çalışır; ilk sorguda AST + LinkResolution önizlemesi tek ağ isteğinde (1-RTT) döner.
+- '18 haftada kusursuz yayın' sözü yerine kanıtlarla ilerleyen 18 hafta / 90 iş günü hedefi.
+- Mimari Karar Kayıtları (ADR), risk kaydı, veri envanteri, release gate ve geri alma planı.
+- Gerçek cihaz testleri, erişilebilirlik, gizlilik, mağaza politikaları ve operasyon.
+- 'Parser anladı' ile 'Trendyol gerçekten filtreledi' ayrı, test edilebilir durumlar.
+
+BELGENİN DOĞRULUK SINIRLARI:
+- 23.11.2026 itibarıyla doğrulanan resmi bilgi, ilgili kaynaklarda ayrıca belirtilir.
+- Trendyol tüketici arama URL'leri resmi sürümlü sözleşme sayılmaz.
+- Bu dokümandaki hedef metrikler ölçüm hedefidir; gerçekleşmiş sonuç değildir.
+- Mağaza kabulü, hukuki onay, marka tescili ve Trendyol'un davranışı garanti değildir.
+- 'Production-ready' = kanıtlanmış test/güvenlik/operasyon hazırlığı; teknoloji listesi değildir.
+
+Doküman hiyerarşisi:
+1. docs/MASTER_PLAN.txt              : Projenin kapsam ve yürütme sözleşmesi.
+2. docs/adr/NNNN-title.md            : Onaylanan/geri alınan mimari karar gerekçeleri.
+3. docs/contracts/                  : OpenAPI, JSON Schema, sözlük sürüm sözleşmeleri.
+4. docs/quality/                    : Kalite hedefleri, değerlendirme raporları ve release checklist.
+5. docs/runbooks/                   : Arıza/geri alma/silme/dağıtım işlemleri.
+6. GitHub Issues + Projects          : Gerçek ilerleme; dokümanda hayalî tamamlandı işareti yok.
+
+Değişiklik yönetimi:
+- Kapsam, API semantiği, depolama, sağlayıcı veya platform değişirse ADR yaz.
+- Her işin Definition of Done (DoD) ve izlenebilir test kanıtı olsun.
+- 'Zorunlu (P0)' varken 'güzel olur (P2)' özelliği ekleme.
+- Bir varsayım doğrulanmadıysa VERIFY_REQUIRED olarak bırak; doğrulanmış gibi sunma.
+
+======================================================================
+01. ÜRÜN KİMLİĞİ VE PROBLEM TANIMI (PRD)
+======================================================================
+Ad: HEH | Logotype: heh. | Slogan: 'Heh, tam aradığım.'
+Kısa yönlendirme: 'Söyle. Kontrol et. Bul.'
+Tür: Ses/yazı destekli, çok kriterli arama bağlantısı oluşturucusu.
+HEH bir e-ticaret mağazası, ürün katalogu, fiyat karşılaştırma veya sohbet botu DEĞİLDİR.
+
+Problem:
+- Kullanıcı birçok kategori/filtreyi elle açıp eşleştirmek zorunda kalıyor.
+- Kullanıcı doğal cümlede olumsuzluk, alt/üst sınır, alternatif marka ve nitelik söyleyebiliyor.
+- Standart kelime araması ile kesin filtre arasında boşluk var.
+
+Değer önerisi:
+- Tek cümleyle istek toplama.
+- Açıkça görülen, tek tek düzenlenebilen kriterler.
+- HEH'in güvenilir biçimde uygulayabildiği filtrelerle mağazaya yönlendirme.
+- Uygulanamayan kriterleri gizlemeyen şeffaf davranış.
+- Widget'tan mümkün olan en kısa erişim; misafir kullanım.
+
+Başarı tanımı:
+- Kullanıcı ilk denemede doğru kriterleri görür veya en fazla birkaç dokunuşla düzeltir.
+- Filtreli bağlantı, TEST EDİLMİŞ koşulların çoğunu tutarlı uygular.
+- Kullanıcı yanıltılmaz: q'daki bir kelime renk/marka filtresi diye sunulmaz.
+- Üçüncü taraf marka/Trendyol ile resmî ortaklık izlenimi yaratılmaz.
+
+Birincil persona: Filtreden sıkılan mobil alışveriş kullanıcısı; Türkçe yazı/ses.
+İkincil persona: Cihaz ana ekranından hızlı arama başlatmak isteyen tekrar kullanıcı.
+
+P0 kullanıcı öyküleri:
+US-01  Misafir uygulamayı açıp mikrofona basmadan ana ekranı görür.
+US-02  Mikrofonu seçer; izinler açıklanır; Türkçe transkript görüntülenir/düzenlenir.
+US-03  Alternatif olarak yazarak sorgu gönderebilir.
+US-04  Kategori, bütçe, marka, beden, renk, hariç tutma koşulları ayrıştırılır.
+US-05  Kriterleri siler/değiştirir; sistem yeniden hesaplar.
+US-06  Uygulanmış / metne konmuş / uygulanamamış ayrımı görür.
+US-07  Trendyol'a güvenli bir HTTPS bağlantısıyla geçer.
+US-08  Yerel arama geçmişini inceleyip tekil/toplu silebilir.
+US-09  Widget sesli veya yazılı arama ekranını açar; izin olmadan kayıt başlamaz.
+US-10  Ses, internet ve yönlendirme hatalarında yazıyla devam edebilir.
+US-11  İsteğe bağlı hesap açıp geçmiş senkronizasyonunu seçebilir.
+US-12  Hesabını ve sunucu verilerini silebilir; gizlilik metnini görebilir.
+
+V1 DIŞI (bilinçli ertelenenler):
+- Affiliate/komisyon entegrasyonu ve Premium üyelik.
+- LLM, embeddings, RAG, agent, Qdrant, Rust, Celery, Kafka, microservices.
+- Trendyol'dan izinsiz scraping, botla filtre tıklama, otomatik fiyat/stok çekme.
+- Gerçek ürünleri uygulama içinde listeleme veya 'tam eşleşme' yüzdeleri.
+- Çoklu pazaryeri, fiyat alarmı, sanal deneme, sepet/satın alma otomasyonu.
+- Hesap zorunluluğu, sosyal akış, bildirim spam'i, gereksiz onboarding.
+
+Ürün anti-hedefleri:
+- Çok filtre yazılmış diye her kriteri uygulanmış göstermemek.
+- Kullanıcıyı misafir kullanım yerine kayıt duvarına zorlamamak.
+- Ana ekrana reklam, ürün kartı, alt sekme veya yapay zekâ süsleri doldurmamak.
+
+======================================================================
+02. BAŞLANGIÇ KABULLERİ, KESİN KARARLAR VE AÇIK RİSKLER
+======================================================================
+KULLANICI TARAFINDAN KARARLAŞTIRILANLAR:
+- iOS + Android birlikte.
+- React Native + TypeScript.
+- Tek geliştirici, günde ortalama 5 saat.
+- App Store + Google Play'e gönderilebilir kalite hedefi.
+- FastAPI + PostgreSQL en baştan kurulacak.
+- Affiliate V1 için yok; buna ait boş kod/ekran eklemek gerekmiyor.
+- HEH'in mevcut siyah-beyaz, Apple ilhamlı minimalist dilini koru.
+- Kullanıcının kontrolündeki mikrofona dayalı deneyim; widget desteği.
+- LLM API'siz kapsamlı Türkçe NLP: sayı/fiyat/birim ve AND/OR/NOT kapsam ağacı her zaman
+  deterministik kurallarda kilitlidir; önce W4-W6'da M0 baseline ile uçtan uca mobil
+  Text+STT dikey dilimi çalıştırılır, ardından W7-W11'de DistilBERTurk açık uçlu
+  varlık/kategori aday çıkarımı denenir ve geçerse PyTorch'suz ONNX Runtime (INT8/FP16) ile sunulur.
+- Modelin varlığına değil test setinde kazandırdığı kaliteye ve gecikmeye göre deploy kararı.
+- Ağır ML R&D ve eğitim 'projenin ilk gününde' değil, W4-W6 çalışan dikey dilim
+  ve gerçek cihaz STT gözlemlerinden sonra W7-W11 gate'leriyle yapılır.
+
+MİMARİ YÖNLENDİRME (geliştirici kararı):
+- NLP Query Understanding backend üzerinde ayrı sürümlü bir domain + adapter katmanıdır.
+- Ana parser, kriter eşleme ve URL inşası sunucu tarafında tek kaynak (FastAPI).
+  Gerekçe: URL eşleme verisi ve parser kuralı mağaza uygulama güncellemesi olmadan değiştirilebilir.
+- Tek-İstekli (1-RTT) Arama Kontratı: POST /api/v1/search/parse tek seferde hem SearchIntent
+  AST'sini hem de ilk LinkResolution (URL + applied/query_only/unsupported) önizlemesini döndürür;
+  POST /api/v1/search/resolve yalnız kullanıcı UI'da kriter sildiğinde/düzenlediğinde NLP
+  koşturmadan yeni URL hesaplamak için çağrılır.
+- Zero-DB Hot Path: /search/parse, /search/resolve ve /search/capabilities uçları versiyonlu
+  ve SHA-doğrulanmış bellek-içi salt-okunur (in-memory immutable) mapping snapshot'ını okur;
+  hot path'te sıfır PostgreSQL sorgusu vardır. DB kapansa bile misafir arama %100 ayakta kalır.
+- Dar ve Derin Trendyol Kapsamı + TrendyolRouteStrategy: V1'de 5-8 vitrin kategoride
+  (Mont/Üst Giyim, Ayakkabı, Kulaklık, Laptop, Akıllı Telefon vb.) tam kanıtlı FILTER_VERIFIED
+  desteği sağlanır; uzun kuyruk kategorilerde doğrulanmış fiyat aralığı (prc) + akıllı q
+  metnine düşülür. URLBuilder hem SEO slug + -x- birleşik facet path'ini hem /sr query
+  stratejisini soyutlar, yalnız kanıtlanmış rotayı kullanır.
+- Mobilde gösterim mantığı, metin girişi, STT, yerel geçmiş önbelleği bulunur.
+- Sunucu kapalıysa sihirli bir filtreleme vaadi sunulmaz; kullanıcı mevcut geçmişini
+  görebilir ve isteğini kopyalayabilir. İleri sürümde 'temel arama' fallback'i değerlendirilebilir.
+- Backend monolit + açık modül sınırları; ilk sürümde mikroservis yok.
+- Hesap opsiyonel: öncelik misafir akış; hesap yeteneği beta öncesi ayrı iş paketi.
+- Arama metni sunucuda kalıcı saklanmaz; hesaplı geçmiş açık rızayla ve yönetilebilir biçimde saklanır.
+- Sabit filtre sözlüğü 'id tahmini' değil; doğrulama kanıtına bağlı sürümlü kayıt.
+
+BAĞIMLILIKLAR / GATE:
+GATE-0 (W1 / ilk 5 iş günü): Trendyol'da en az 3 vitrin kategori için hem /sr?... hem de
+  SEO slug + -x- birleşik facet path davranışı elle test edilmeli. Başarısızlık 'hedefin
+  imkânsız' olduğu anlamına gelmez; ama mağaza filtrelerini yüzde yüz uygulama iddiası durdurulur.
+GATE-M0 (W4): Deterministik Türkçe kural motoru (sayı/fiyat + AND/OR/NOT AST) çekirdek 200 golden senaryoda geçer.
+GATE-VSLICE-TEXT (W5): Uçtan uca mobil metin arama -> tek-istekli önizleme -> düzenleme -> Trendyol akışı iki platformda çalışır.
+GATE-VSLICE-VOICE (W6): Gerçek iOS + Android cihazda STT -> M0 -> düzenlenebilir kriter akışı çalışır; gerçek ASR hata günlüğü toplanır.
+GATE-NLP-A (W7): Gerçek STT gözlemleriyle zenginleştirilmiş ontology, AST ve annotation policy onaylanır.
+GATE-NLP-B (W8): Etiketli dataset (gerçek ASR dilimi dahil), group-split leakage denetimi ve dondurulmuş M0 tam benchmark yayımlanır.
+GATE-NLP-C (W9): Daraltılmış rollü DistilBERTurk (M2) ve lineer M1 deneyleri değerlendirilir.
+GATE-NLP-D (W10): Kural-öncelikli hibrit birleştirme, kalibrasyon, ONNX (INT8/FP16) eşdeğerlik/gecikme testi ve M0/M1/M2/M3 ablation onaylanır.
+GATE-NLP-PROD (W11): PyTorch-free ONNX serving / shadow / NLP_MODE=rules fallback şartlı onaylanır.
+GATE-1: Query understanding güvenli golden kritikleri geçmeden otomatik filtre iddiası yok.
+GATE-2: Widget ve STT gerçek iOS + Android cihazda çalışmalı.
+GATE-3: Gizlilik, hesap silme, mağaza inceleme ve güvenlik kontrol listeleri geçilmeli.
+
+Belirsizlik halinde ürün kararı:
+A) Gerçek filtre parametresi doğrulanmış -> URL filtresine aktar.
+B) Sadece arama kelimesi ile ilişkilendirilebilir -> 'Metinle arandı' de.
+C) Negatif/belirsiz şart veya doğrulanamayan filtre -> 'Uygulanamadı' de,
+   kullanıcıya düzenleme/tekil seçim teklif et. Sessizce yok sayma.
+D) Desteklenmeyen kritik zorunlu şartlar baskınsa CTA'yı 'Kısmi aramayı aç' olarak etiketle.
+
+======================================================================
+03. GÜNCEL TEKNOLOJİ YIĞINI VE SÜRÜM POLİTİKASI
+======================================================================
+V1 ANA YIĞINI (23.11.2026 itibarıyla):
+- Mobil: React Native 0.88 + Expo SDK 58 (uyumluluk: resmi Expo SDK matrisi), TypeScript strict.
+- Yönlendirme: Expo Router; tek kök arama akışı, yardımcı ekranlarda modal/bottom sheet.
+- Derleme: EAS Build + development builds (widget/STT için yalnız Expo Go'ya dayanma).
+- Widget: SDK 58 'expo-widgets' (iOS/Android); ilk hafta iki platform için POC.
+  Gerekirse platforma özgü SwiftUI/WidgetKit ve Kotlin/Glance fallback adapter.
+- Konuşma tanıma: iOS SFSpeechRecognizer / Android SpeechRecognizer'u saran,
+  development build uyumlu ve bakımı doğrulanan bir modül. Aday: expo-speech-recognition;
+  kütüphane seçimi ve izin işleyişi gerçek cihaz POC'den sonra ADR ile sabitlenir.
+- İstemci veri/istek: TanStack Query + fetch tabanlı typed API istemcisi.
+- Hafif UI durumları: React Context/useReducer; gereksiz global state kütüphanesi yok.
+- Cihaz verisi: expo-sqlite; kimlik tokenı/kimlik bilgisi: expo-secure-store.
+- Paket yönetimi: pnpm workspace, pnpm-lock.yaml; Node LTS sürümü .node-version ile sabit.
+- UI testleri: Jest/React Native Testing Library (uyumlu sürüm) + Maestro cihaz E2E.
+- API: Python 3.12, FastAPI, Pydantic v2, SQLAlchemy 2.x, Alembic, pydantic-settings.
+- NLP rules/runtime: Python regex, Unicode/NFC, Turkish-aware normalization,
+  Decimal/typed AST, pure rule grammar (sayı/fiyat/birim ve AND/OR/NOT kapsamı
+  her modda deterministik kurallarda kalır) ve kategorik ontology.
+- NLP R&D (W9-W10, yalnız offline ml/ ortamı): PyTorch, Transformers, Datasets,
+  Evaluate/seqeval, scikit-learn, optimum/onnx/onnxruntime quantization araçları;
+  gerektiğinde Sentence Transformers. Üretim API konteynerine PyTorch/Transformers eklenmez.
+- NLP weights: registry/sha/lisans + ayrı artifact store; Git reposuna checkpoint koyma.
+- NLP serving (W11): Kapıyı geçen DistilBERTurk adayının ONNX Runtime (onnxruntime CPU,
+  INT8/FP16) ile tek servis içinde hafif çıkarımı (düşük RAM, tek sorgu CPU hedefi ~30-50 ms);
+  yük gerektirirse ayrı inference container ADR, varsayılan microservice YOK.
+- Python bağımlılıkları: uv + pyproject.toml + uv.lock; Ruff + pytest + pytest-asyncio/httpx.
+- Veritabanı: PostgreSQL 17+; migration'lar Alembic; yerelde Docker Compose.
+- Kimlik: Yönetilen OIDC/email OTP sağlayıcısı tercih edilir (öneri: Supabase Auth).
+  Supabase Auth'ın JWT/JWKS yapısı ve kullanım koşulları entegre edilmeden sabitlenmez.
+- Production backend: Tek FastAPI servis; TLS arkasında, yönetilen PostgreSQL,
+  otomatik yedekleme ve ayrı staging; sağlayıcı seçimi ADR ile kayıt altına alınır.
+- Rate limit: Girişe açık API için edge/WAF limiti; çoklu instance gerekiyorsa Redis
+  destekli dağıtık sayaç. Redis daha ilk gün zorunlu servis değildir.
+- İzleme: Sentry (crash/backend hata, PII scrubbing); yapılandırılmış JSON log.
+- Ürün analitiği: Opt-in / gizlilik sınıflandırmasına uygun asgari eventler; ham sorgu yok.
+- CI: GitHub Actions (ilk gün); CD: EAS Workflows / backend deploy otomasyonu kademeli.
+- Secret yönetimi: GitHub environment secrets / hosting secret store / EAS env vars.
+
+SÜRÜM POLİTİKASI:
+- İlk kuruluma girmeden resmi SDK ve kütüphane uyumluluğunu doğrula.
+- Tam patch sürümler lockfile ile dondur; dokümana olmayan patch numarası uydurma.
+- Büyük sürüm güncellemesini ayrı PR + smoke test ile yap.
+- Widget SDK'sının yeni yetenekleri için gerçek cihaz uyumluluk matrisi olmadan
+  'native kod hiç gerekmeyecek' diye kesin karar verme.
+- Kullanılmayan Redis/Celery/Qdrant/Rust/LLM eklemek kalite göstergesi değildir.
+- 'AI projesi' için gerçekten model eğit ve karşılaştır, ama başarısız modeli
+  sadece transformer kullandığını göstermek için production'a alma.
+
+Araştırma referansları (yayına hazırlanırken tekrar kontrol et):
+* Expo SDK 58: https://expo.dev/sdk/58
+* Expo widgets: https://docs.expo.dev/versions/v58.0.0/sdk/widgets/
+* Expo Workflows: https://docs.expo.dev/eas/workflows/
+* Apple App Review: https://developer.apple.com/app-store/review/guidelines/
+* Google Play account deletion: https://support.google.com/googleplay/android-developer/answer/13327111
+* Trendyol satıcı API tanımı: https://developers.trendyol.com/
+* GitHub Actions güvenlik: https://docs.github.com/en/actions/reference/security/secure-use
+* BERTurk: https://huggingface.co/dbmdz/bert-base-turkish-cased
+* DistilBERTurk: https://huggingface.co/dbmdz/distilbert-base-turkish-cased
+* Transformer token classification: https://huggingface.co/docs/transformers/en/tasks/token_classification
+* Sentence Transformers semantic search: https://www.sbert.net/examples/sentence_transformer/applications/semantic-search/README.html
+
+======================================================================
+04. MONOREPO, KLASÖR YAPISI VE MODÜL SAHİPLİĞİ
+======================================================================
+HEH/
+  .github/
+    workflows/
+      ci.yml                 # İlk gün: hafif lint/test/typecheck
+      security.yml           # Dependabot/secret/bağımlılık incelemesi
+      api-deploy.yml         # Staging ve prod onaylı deploy (aşamalı)
+      release.yml            # Tag sonrası manual/eas orchestration (aşamalı)
+    pull_request_template.md
+    ISSUE_TEMPLATE/
+  .eas/workflows/            # EAS build/internal distribution (beta aşamasında)
+  apps/mobile/
+    app/                     # Expo Router: index, modal, history, account, settings
+    src/
+      features/search/       # home, listening, text entry, criteria review
+      features/history/
+      features/account/
+      features/settings/
+      components/ui/         # icon, chip, button, typography, bottom sheet
+      theme/                 # monochrome tokens, spacing, radius, motion
+      navigation/            # typed routes / deep links
+      services/api/          # OpenAPI'den üretilmiş istemci
+      services/speech/       # SpeechAdapter, status and permissions
+      services/storage/      # local history/secure token abstraction
+      services/widgets/      # widget event routing & update bridge
+      telemetry/             # permitted metrics only
+      hooks/
+      accessibility/
+    widgets/                 # expo-widgets layouts + widget config
+    assets/                  # heh. vektörler, app/icon/splash
+    tests/
+    e2e/
+    app.config.ts
+    eas.json
+    package.json
+    tsconfig.json
+  ml/
+    heh_nlp/                 # W9+ offline PyTorch training, ONNX INT8/FP16 export & benchmark
+      train.py
+      evaluate.py
+      export_onnx.py
+      predict.py
+      compare.py
+      configs/
+      models/README.md      # weights dış sürümlü artifact store
+  data/                      # W4 seed + W7-W8 curated Türkçe alışveriş & gerçek STT sorguları
+    ontology/                # category, unit, canonical attributes, aliases
+    annotations/             # guidelines and manually audited labels
+    splits/                  # train/dev/test, group splits + manifest
+    manifests/               # provenance, checksums, licenses
+  services/api/
+    src/heh_api/
+      main.py                # FastAPI + lifespan + global handlers
+      api/v1/
+        health.py
+        search.py
+        catalog.py
+        history.py
+        account.py
+      core/
+        config.py
+        security.py
+        logging.py
+        errors.py
+        rate_limit.py
+      domain/
+        criteria.py
+        parsing.py
+        links.py
+        verification.py
+      application/
+        parse_search.py
+        build_link.py
+        manage_history.py
+      infrastructure/
+        nlp/                  # rules/model/hybrid adapters + confidence gates
+        db.py
+        repositories/
+        auth/
+        trendyol/           # Trendyol arama-bağlantı adapteri
+      mappings/
+        categories/
+        attributes/
+        verified/
+      schemas/
+    tests/
+      unit/
+      integration/
+      contracts/
+      golden/
+    alembic/
+    pyproject.toml
+    uv.lock
+    Dockerfile
+  packages/
+    api-client/              # OpenAPI üretiminden gelen TS tipleri
+    query-fixtures/          # platformlar arası anonim test fixture'ları
+  infrastructure/
+    docker-compose.yml      # api + postgres geliştirme
+    deploy/
+    backup/
+  scripts/
+    bootstrap.sh
+    verify.sh
+    eval_parser.py
+    nlp/                     # validate annotations, leakage audit, benchmark, model eval
+    verify_filter_matrix.py
+    generate_api_client.sh
+  docs/
+    MASTER_PLAN.txt
+    adr/
+    contracts/
+    design/
+    nlp/                     # RFC, model-card, dataset-card, ablation, evaluation
+    quality/
+    risk-register.md
+    runbooks/
+    privacy/
+    release/
+  .env.example
+  .gitignore
+  .editorconfig
+  .node-version
+  pnpm-workspace.yaml
+  pnpm-lock.yaml
+  README.md
+  CONTRIBUTING.md
+  SECURITY.md
+  LICENSE
+
+MODÜL KURALLARI:
+- Mobile uygulama doğrudan SQL'e erişmez, sadece FastAPI kontratını çağırır.
+- FastAPI endpoint'leri parser veya SQL implementasyonu içermez; application use-case çağırır.
+- domain/ hiçbir dış framework, FastAPI Request veya ORM nesnesi import etmez.
+- infrastructure/ dış dünya adapter'larını içerir. Testte fake repository/adapter ile değiştirilir.
+- Widget içinde iş mantığı ve asenkron API çağrısı yok; sadece kullanıcı eylemini açar.
+- UI sadece backend'in verdiği status'a göre 'uygulandı' etiketi kullanır.
+- İşlev olmayan placeholder sayfa yayın sürümünde görünmez.
+- Asla provider token, DB parolası veya API secret mobil uygulama bundle'ına konmaz.
+
+======================================================================
+05. EKRAN SÖZLEŞMESİ, TASARIM SİSTEMİ VE ETKİLEŞİM
+======================================================================
+KİMLİK:
+Wordmark: 'heh.'; slogan: 'Heh, tam aradığım.'; kısa mesaj: 'Söyle. Kontrol et. Bul.'
+Renk: #000000 / #FFFFFF; erişilebilir ikincil gri tonlar.
+Tipografi: iOS sistem fontu (SF ailesi), Android sistem fontu; marka fontu için lisans
+ve platform izinleri ayrıca teyit edilir. Fontları repo dışına lisanssız ekleme.
+8px temel grid; ekran kenarı 20-24dp; güvenli alanlara uyum; responsive dynamic type.
+Renkle tek başına durum kodlama yok; ikon + kısa metin ile anlat.
+Hafif animasyon, Reduce Motion desteği; titreşim/haptics isteğe bağlı ve ölçülü.
+
+SCREEN-01 Home / Idle:
+- Üstte küçük 'heh.'; sağ üstte üç nokta.
+- Ortada tek büyük mikrofon butonu (duruma göre aktif), altında kısa 'Ne arıyorsun?'.
+- Alt bölümde klavye/ses modu seçimi; tab bar YOK.
+- İlk girişte mikrofon otomatik aktif değil.
+- Girdi modunun değişmesi ana ekrandan ayrılmadan olabilir.
+- Boş ekran ve offline durumda birincil eylem anlaşılır.
+
+SCREEN-02 Listening:
+- Durumlar: idle -> permission_request -> starting -> listening -> stopping -> transcribed
+  veya error/cancelled. Aynı anda iki STT oturumu çalışmaz.
+- İzin reddinde zorlamadan yazıyla devam; cihaz ayarlarına isteğe bağlı bağlantı.
+- Kullanıcı konuşmayı bitirdiğinde transkript görüntülenir ve düzenlenebilir.
+- Gizlilik: kayıt sırasında OS mikrofon göstergesi; kalıcı ham ses depolaması YOK.
+- Süre dolumu, başka uygulamaya geçiş, arama/telefon görüşmesi, bağlantı kesilmesi işlenir.
+
+SCREEN-03 Text entry:
+- Tek alan, otomatik yükseklik; gönder butonu boş/yalnız boşlukta disabled.
+- Klavye açıldığında CTA ve alan safe area ile çakışmaz.
+- Sorgu üst sınırı backend ile aynı; görsel karakter sayacı zorunlu değil.
+- Türkçe büyük/küçük i/İ/ı/I doğru normalize edilir; orijinal metin korunur.
+
+SCREEN-04 Criteria review (uygulamanın değer merkezi):
+- Başlık: 'Şunu mu arıyorsun?'; kartlar: kategori, fiyat, marka, renk, beden, özellikler.
+- Eşleşme yüzdesi YOK.
+- Üç durum: 'Filtre uygulandı', 'Arama metninde', 'Uygulanamadı'.
+- Her chip tek dokunuşla düzenlenir/silinir; kaldırılan kriter sonuca gizlice dönmez.
+- Zorunlu koşullar ile tercihler ayrılır; OR ve NOT operatörleri doğru anlaşılır.
+- Parametre doğrulanmamışsa kesin filtre gibi gösterilmez.
+- Birden fazla markanın OR koşulu desteklenmiyorsa ayrı arama öner / durumu bildir.
+- Ana CTA: 'Trendyol'da göster'; kısmi sonuçlarda 'Kısmi aramayı aç'.
+- CTA öncesi açıklama: 'X kriter filtrelendi, Y metinle arandı, Z uygulanamadı.'
+- Desteklenmeyen tüm zorunlu şartlar varsa kullanıcıya açık uyarı göster.
+
+SCREEN-05 MoreSheet (sağ üst üç nokta):
+- Geçmiş, Hesap (isteğe bağlı), Ayarlar, Hakkında/Gizlilik.
+- Minimal bottom sheet; kapanabilir; erişilebilir odak ve gesture.
+- Premium/favoriler reklamı veya boş menü öğesi yok.
+
+SCREEN-06 History:
+- Misafir geçmişi yerel SQLite'ta tutulur; kullanıcı kapatabilir.
+- En yeni kayıt üstte, tarih ve kısa sorgu; tekil/tümünü sil.
+- Aramaya yeniden dönünce filtreler tekrar sunucu doğrulamasından geçer;
+  eski doğrulanmış parametreye sonsuz güvenilmez.
+- Hesaplı ve misafir verisi birleştirme işlemi açık kullanıcı onayıyla yapılır.
+
+SCREEN-07 Account:
+- Misafir devam etme varsayılan; kayıt 'geçmişi eşitle' gibi net faydaya bağlı.
+- Email OTP veya magic link; gizlilik, çıkış, hesap silme.
+- Hesap açılışı beta öncesinde güvenilir değilse yayın v1'den çıkar;
+  fakat yayın ekranında bozuk 'giriş yap' butonu bulunamaz.
+
+SCREEN-08 Settings:
+- Tema: sistem/açık/koyu; geçmiş açık/kapalı; verileri sil;
+  izin açıklaması; gizlilik/KVKK; uygulama sürümü; destek bağlantısı.
+- Karar verilmemiş ayar kullanıcıya gösterilmez.
+
+SCREEN-09 Error states (ayrı sayfa yerine inline):
+- Yetki reddi -> 'Mikrofon kapalı. Yazarak devam edebilirsin.'
+- STT yok -> 'Bu cihazda sesli arama kullanılamıyor.'
+- Ses boş -> 'Bir şey duyamadım. Tekrar deneyebilirsin.'
+- 422 parser -> 'Bu cümleyi filtrelere ayıramadık. Düzenleyebilirsin.'
+- Backend offline -> 'Bağlantı yok. Tekrar dene.' (geçmiş erişilebilir)
+- Parametre süresi dolmuş -> 'Bazı filtreler doğrulanamadı.'
+- Açma hatası -> 'Bağlantı açılamadı.' + kopyalama butonu.
+
+WIDGET-01 Compact:
+- heh. + mikrofon ikonu; tap -> heh://search?mode=voice
+- Widget kendi içinde mikrofon kaydetmez; foreground app ses iznini kontrol eder.
+WIDGET-02 Medium:
+- Sesli ara, Yazarak ara; tap -> uygun deep link.
+- Küçük widget boyutunda tıklama alanları asgari erişilebilir ölçüde.
+- iOS ve Android için görünüm eşdeğer; birebir piksel aynı olmak zorunda değil.
+- İlk açılış/uygulama yüklenmemiş/izin reddi/cihaz kilidi senaryoları test edilir.
+
+GÖRSEL DOĞRULAMA:
+- Referans ekran görüntüleri docs/design altında tutulur.
+- iPhone küçük/büyük ekran + Android küçük/büyük ve dinamik yazı ölçekleriyle test.
+- Dark mode kontrast, VoiceOver, TalkBack, klavye erişimi, reduce motion, safe areas.
+
+======================================================================
+06. UÇTAN UCA DURUM MAKİNESİ VE SİSTEM AKIŞI
+======================================================================
+User opens App/Widget -> Home -> Text/Voice -> Normalize -> POST /search/parse
+-> (SearchIntent AST + Initial LinkResolution in 1 RTT, Zero-DB) -> CriteriaReview
+-> [if user edits chip/price: POST /search/resolve -> Updated LinkResolution]
+-> user confirms -> OS opens allowlisted HTTPS Trendyol URL.
+
+Durumlar:
+IDLE, REQUESTING_PERMISSION, LISTENING, EDITING_QUERY, PARSING, REVIEWING,
+RESOLVING, READY_TO_OPEN, OPENING_EXTERNAL, ERROR.
+
+Geçiş kuralları:
+- Tek bir request_id ile istek takip edilir; kullanıcı yeni girdi girerse eski sonucu iptal et.
+- İlk sorguda mobil istemci /search/parse ardından ikinci bir /search/resolve isteği atmaz;
+  /search/resolve yalnız kullanıcı CriteriaReview ekranında kriter düzenlediğinde/sildiğinde
+  NLP koşturmadan güncellenmiş AST üzerinden yeni URL hesaplamak için çağrılır.
+- Out-of-order yanıt en güncel sorguyu ezemez; AbortController/cancel token.
+- Aynı arama butonuna çift dokunma iki ayrı intent başlatmaz.
+- Başarılı parse'ı hemen otomatik Trendyol'a gönderme: kullanıcı filtreleri görsün.
+- Dış tarayıcı/Trendyol dönüşü uygulama mevcut review durumunu korusun.
+- Widget 'voice' girişinde direkt kayda başlamadan önce izin + foreground koşulu doğrula.
+- Gereksiz ağ tekrarlarından kaçın; fakat filtre haritası sürüm değişirse eski linki kullanma.
+
+======================================================================
+07. DOMAIN MODEL, PARSER VE KRİTER SEMANTİĞİ
+======================================================================
+Parser hedefi: Serbest Türkçe metni kontrol edilebilir, test edilebilir yapılara dönüştürmek.
+
+Temel alanlar:
+- category (taxonomy_id, normalized_label, parent_category)
+- brand (string/id, OR/NOT)
+- color, size, gender, material, style, feature
+- price (min/max, inclusive, currency TRY)
+- sorting (relevance, price_asc, price_desc, newest — yalnız doğrulanmış)
+- meta (source: voice|text, parser_version, dictionary_version, warnings)
+
+Önerilen yapı (kısa örnek):
+{
+  "query": "3 bin altı siyah mont Nike olmasın M beden",
+  "locale": "tr-TR",
+  "criteria": [
+    {"field":"category","op":"eq","value":"mont","required":true},
+    {"field":"price","op":"lte","value":3000,"currency":"TRY","required":true},
+    {"field":"color","op":"eq","value":"siyah","required":true},
+    {"field":"brand","op":"not_in","value":["Nike"],"required":true},
+    {"field":"size","op":"eq","value":"M","required":true}
+  ],
+  "parser_version":"1.0.0",
+  "warnings":[]
+}
+
+Sıralı işlem hattı:
+1) Girdi doğrulama: UTF-8, 1..500 karakter, kontrol karakterleri, çok uzun/düzensiz input.
+2) Normalizasyon: Unicode NFC, Türkçe locale, eşdeğer boşluklar, 3 bin / 3.000 / 3000.
+3) Tokenization + çok sözcüklü kalıplar: 'kulak üstü', 'su geçirmez', 'en az'.
+4) Parasal ifade çıkarımı: '2500-3500', 'en fazla 3 bin', '3 binden ucuz'.
+5) Kategori tahmini: belirlenmiş Türkçe sözlük/taxonomy; eşsesli ifade çakışması.
+6) Varlık çıkarımı: marka/renk/beden/malzeme; kategori bazlı etiket sözlükleri.
+7) Mantık bağlama: AND, OR, NOT, alt/üst, '-den küçük', 'hariç', 'olmasın'.
+8) Çelişki tespiti: min>max; 'siyah' ve 'siyah olmasın'; iki ayrı beden şartı.
+9) Normalleştirilmiş kanonik kriter listesi, alternatif ve uyarı üretimi.
+10) Doğrulanmış mağaza eşleme motoruna devret; parser URL kimliği üretmez.
+
+ZORLUKLAR / TEST ET:
+- 'Nike veya Adidas' => OR, iki markayı AND yapma.
+- 'Nike olmasın' => NOT; hiçbir zaman Nike pozitif filtresi açma.
+- '3 bini geçmesin ama 1500 altı da olmasın' => [1500,3000].
+- 'kırmızı değil bordo' => bordo isteniyor; kırmızı dışlaması her durumda garantili değil.
+- 'iPhone 13' ifadesindeki 13 beden veya fiyat değil model numarasıdır.
+- '40 saat pil ömrü' içindeki 40 fiyat değil ölçü.
+- '15,6 inç' virgüllü ondalık; '1.5 kg' kilo/ürün ağırlığı.
+- 'L beden' L litre değil; kategori bağlamını kullan.
+- '4500'e kadar' sayı ayrıştırmada ek işaretleri.
+- '20-30 bin' => 20000..30000; kısaltma bağlamı.
+- Transkript hata olasılıkları: 'JBL'->'cey bi el', 'M'->'em'.
+
+Golden dataset:
+- W4 başlangıç M0 çekirdek seed ~200 örnek; W6 gerçek cihaz STT hata gözlemleri;
+  W7-W10 anotasyon/kalite kapasitesine göre 400-1200 elle incelenen ve eğitim
+  varyasyonuyla 1500-3000 hedef dataset.
+- Golden test seti, train/dev/test grup ayrımı ve anotasyon kalitesi ile yönetilir.
+- Başlangıç en az 200 elle etiketli anonim/fabrike sorgu; veri kategorilere dengeli dağıtılır.
+- Giyim, elektronik, ev, kozmetik, negatif ve OR sınır durumları.
+- Dosya: tests/golden/queries.v1.jsonl; beklenen normalized criteria ve warnings.
+- Parser sürümü değiştiğinde otomatik regresyon. Yeni hata -> önce test, sonra kural.
+- Hedef metrikler (başlangıç gate; kanıtlanmış değildir):
+    kritik fiyat sınırı F1 >= 0.98; zorunlu negatiflik doğru yorum >= 0.99;
+    genel field exact-match >= 0.90; unsupported durumunun dürüst raporu %100.
+- Bu eşikler başarılmazsa kullanıcıya otomatik 'kesin arama' diye çıkma.
+
+======================================================================
+07A. NLP ÜRÜN SINIRI, BİLİMSEL AMAÇ VE AŞAMALI TASARIM (YENİ)
+======================================================================
+TEMEL KARAR: NLP'nin ağır ML R&D fazı PROJENİN 1. GÜNÜNDE KODLANMAZ. W1-W3 ürün riski,
+domain kontratı, filtrelerin gerçekten uygulanabildiğinin kanıtı ve Zero-DB iskeleti kurulur;
+W4'te deterministik M0 baseline, W5-W6'da ise gerçek iOS/Android cihazlarda uçtan uca
+metin + ses (STT) dikey dilimi ayağa kaldırılır. W7-W11 dönemi bu canlı ürün ve gerçek STT
+gözlemleri üzerinde yürütülen ciddi HEH NLP Engine araştırma ve MLOps sprintidir.
+NLP baştan sona mimari sınır olarak tasarlanır; ağır ML geliştirme dikey dilim çalıştıktan sonra yapılır.
+
+HEH, 'chatbot' değil bir TÜRKÇE COMMERCE QUERY UNDERSTANDING (CQU) motorudur.
+NLP'nin görevi kullanıcının söylediklerini bozmayarak CanonicalSearchIntent üretmektir.
+NLP'nin görevi Trendyol ürünlerini listelemek, stok/fiyat doğrulamak veya
+Trendyol filtre parametrelerini uydurmak DEĞİLDİR.
+
+BAŞARI İÇİN AYRILMIŞ DÖRT SORU:
+1. Kullanıcının söylediğini doğru anladık mı? -> NLP evaluation.
+2. Kullanıcının açıkça söylemediği varsayımları uydurduk mu? -> Hallucinated constraint rate.
+3. Anlaşılan kriter Trendyol'da doğrulanmış filtreye dönüşebildi mi? -> URL mapping evaluation.
+4. Gerçek kullanıcı doğru ürüne daha hızlı ulaştı mı? -> Ürün KPI / kullanıcı testi.
+Bu dört metriği tek 'AI accuracy' rakamına ASLA birleştirme.
+
+BİRLEŞİK HİBRİT MİMARİ (KESİN GÖREV DAĞILIMI):
+Raw input / STT final transcript
+  -> Input sanitizer + Unicode normalization
+  -> Language/Turkish-aware number & unit parser (HER ZAMAN DETERMINISTIK KURAL)
+  -> Domain vocabulary + category router
+  -> High-precision span matcher / regular-expression rules (M0 baseline)
+  -> [ML flag enabled ise] DistilBERTurk ONNX (INT8/FP16) açık uçlu varlık/kategori/OOD çıkarımı
+     (yalnız sözlüğün kaçırdığı aday span ve kategori önerir; sayı/fiyat veya NOT kutbu değiştiremez)
+  -> [gerekiyorsa] semantic attribute candidate retrieval
+  -> Constraint graph builder (AND/OR/NOT/LOWER/UPPER/PREFERENCE — HER ZAMAN KURAL KİLİTLİ)
+  -> Conflict/ambiguity resolver + provenance tracker
+  -> Per-slot confidence/calibration + abstain policy
+  -> Versioned CanonicalSearchIntent (JSON Schema / Pydantic)
+  -> In-memory immutable Provider mapping adapter -> ilk LinkResolution (1-RTT parse yanıtında döner)
+  -> Editable human review (yalnız kullanıcı chip düzenlerse /search/resolve)
+  -> Applied/Query-only/Unsupported classification
+  -> External search with explicit user action.
+
+MÜHENDİSLİK KURALLARI:
+- Sayı, fiyat, ölçü birimi ve 've / veya / ya da / değil / olmasın / hariç' mantıksal
+  kapsam ağacı (AllOf/AnyOf/Not) her zaman deterministik kurallarla kurulur; çünkü salt BIO/BILOU
+  etiketleme sondan eklemeli Türkçede OR/NOT kapsamını tek başına güvenilir çözemez.
+- Model yalnızca açıkça izin verilen alanlardan (eksik varlık/ürün tipi/özellik/kategori/OOD)
+  aday önerir; schema dışı değer reddedilir ve deterministik kuralların NOT/fiyat sınırını ezemez.
+- Entity extraction sonucunda 'Nike' span'i görünse bile bağlamda NOT ise
+  positive_brand olarak otomatik işaretlenmez.
+- ML çıktısı kesin bir gerçek değil; kanıt, eşik ve doğrulama sonrası öneridir.
+- Belirsizliği saklamak yerine kullanıcıya düzenlenebilir seçenek sun.
+- Açık tercih (preferred) ve zorunlu şart (required) farklı türlerdir.
+- Kategori nesnesi ile mağaza kategori ID'si aynı varlık değildir.
+- Şema, model, tokenizer, kurallar, sözlük, dataset ve mağaza adapter'ı AYRI sürümlenir.
+- Model eğitimi uygulama açılışında veya FastAPI request worker'ında yapılamaz.
+- Ham girdi ancak işlem süresince işlenir; telemetride varsayılan olarak saklanmaz.
+- Kullanıcı izni olmadan canlı sorgulardan otomatik eğitim veri seti oluşturma.
+- Açıklanabilirlik için her kriterin metin kanıtını (span/source) response'a ekle;
+  mevcut girdi temizlenince kalıcı PII saklama koşullarını değerlendir.
+
+NLP İÇİN KESİN EN AZ DESTEKLENECEK İŞLEVLER:
+A) Category intent: giyim/elektronik/ev/kozmetik, kategori hiyerarşisi.
+B) Named slots: brand, color, material, size, model, product_type, price,
+   product_attribute, rating, review_count, numeric units, shipping, delivery.
+C) Numeric ranges: <, <=, >, >=, [a,b], 'x bin', 'x civarı' (yaklaşık).
+D) Boolean and scope: AND/OR/NOT; 'Sony ya da JBL', 'Nike hariç'.
+E) Modality: required, preferred, optional, prohibited, approximately.
+F) Referential patterns: 'Nike olmasın, Adidas olabilir', 'siyah değil lacivert'.
+G) Multiple constraints on a field: price min/max; brand OR group.
+H) OOD/unsupported: 'beni mutlu edecek mont', ürün olmayan talepler.
+I) Speech noise: 'cey bi el' / JBL, 'm beden' / 'em beden', fiyatta ASR hatası.
+J) Contradiction: 'siyah olsun ama siyah olmasın', minPrice>maxPrice.
+K) Negation scope: 'Nike olmayan Adidas ayakkabı' gibi bozuk ifade.
+L) Unit context: GB, kg, ml, cm, inç, Pa, dB, saat, W, Hz, mAh.
+M) Text alias: 'kulaküstü' / 'kulak üstü'; 'gri' / 'füme'.
+N) Brand/model collision: 'Apple Watch 9', 'iPhone 13', 'M2', 'S24'.
+O) Complex combinations: (Sony OR JBL) AND ANC AND price<=6000 AND NOT white.
+
+GEREKLİ MÜHENDİSLİK ÇIKTILARI:
+- NLP Design RFC, task definition, error taxonomy, supported ontology.
+- Versioned annotated golden data + annotation handbook.
+- Deterministic baseline + unit/property tests.
+- En az bir gerçek eğitilmiş modelin tekrar üretilebilir deneyleri.
+- Model-vs-baseline karşılaştırmalı eval/ablation + failure analysis.
+- Kullanıcı düzeltme/abstention deneyimi ve edge-case'ler.
+- Model serving/rollback/monitoring + maliyet/latency kararı.
+- Model çalışmazsa deterministic fallback; kaynak semantiği hiç uydurulmaz.
+- Model kartı + veri kartı + etik/gizlilik lisans notları.
+
+======================================================================
+07B. KANONİK QUERY LANGUAGE, AST VE VERİ SÖZLEŞMESİ (YENİ)
+======================================================================
+HATA KAYNAĞI: 'criteria: [{field, operator, value}]' basit sorgulara yeterlidir,
+AMA iç içe grup, OR/NOT kapsamı, tercih derecesi ve çelişki yönetimi için YETERSİZDİR.
+HEH, AST (Abstract Syntax Tree) + düzleştirilmiş UI kriterleri üretir.
+
+TEMEL TİPLER (Pydantic v2 discriminated unions):
+- SearchIntent: request_id, original_source, language, ontology_version,
+  parser_version, model_version, taxonomy_version, constraints: ExpressionNode,
+  ui_constraints[], explanations[], ambiguities[], warnings[].
+- ExpressionNode: AllOf(children), AnyOf(children), Not(child), Predicate.
+- Predicate: field, op, typed_value, unit, modality, provenance, confidence,
+  grounding_status, source_span, canonical_value, display_value.
+- Typed value örnekleri: DecimalPrice(currency='TRY', amount=3000),
+  Size(value='M', system='clothing'), Numeric(value=40, unit='hour').
+- Provenance: RULE, ML, USER_CORRECTION, CATALOG_ALIAS, STT_TRANSCRIPT.
+- Confidence: numeric model skoru değil, kalibre edilmiş slot güveni veya
+  unavailable; UI'a yüzdelik uydurma.
+- Ambiguity: conflict_type, candidate_values, question, blocking_flag.
+- Source span: UTF-8 byte offset ile karıştırılmayan Unicode codepoint offset;
+  orijinal/görüntülenen transcript offset mapping'i tut.
+
+KULLANICI ÖRNEĞİ:
+'Sony veya JBL kulaküstü olsun, 6000 altında, beyaz olmasın, ANC şart.'
+Kavramsal AST:
+AllOf([
+  AnyOf([brand = Sony, brand = JBL]),
+  product_type = over_ear_headphones,
+  price <= 6000 TRY,
+  Not(color = white),
+  attribute.anc = true (required)
+])
+
+EKRAN GÖSTERİMİ:
+- [Sony veya JBL] -> tek OR grubu, iki ayrı zorunlu marka değil.
+- [6.000 TL altı] -> fiyat, uygulamada düzenlenebilir.
+- [Beyaz hariç] -> dışlama. Provider uygulayamıyorsa işaretli 'Unsupported'.
+- [ANC] -> özellik; provider q'da geçtiyse 'Query-only'.
+
+CONTRACT INVARIANTS (test edilecek):
+1. AST derinlik sınırı; iç içe 1000 node ile DoS yapılamaz.
+2. Canonical field enum dışında bilinmeyen anahtar sessizce kabul edilmez.
+3. para Currency+Decimal kullanır; float rounding ile fiyat değişmez.
+4. '3000 altı' (<3000) ve '3000'i geçmesin' (<=3000) dil semantiğine göre ayrılır.
+5. Aynı alan için aynı anda min/max sınırı tutarlı olmak zorunda.
+6. NOT scoped; 'siyah değil lacivert' bağımsız NOT + tercih olabilir.
+7. OR semantiği (A veya B) AND'e sessiz dönüşmez.
+8. NLP modelinden gelen confidence provider verification değildir.
+9. Her kullanıcı düzeltmesi provenance USER_CORRECTION ile işaretlenir.
+10. No input value -> no invented constraint.
+11. Mappings disabled ise geçmiş sorgu replay'de güncel duruma göre tekrar çözülür.
+12. Şema versiyon değişimi explicit migrator veya 422 contract error üretir.
+13. Turkish locale: ASCII lowercase kayıp yaratmamalı ('I','İ','ı','i').
+14. '44 numara ayakkabı' ile '44 saat pil' category bağlamında çözülür.
+15. AllOf([]) -> boş arama anlamı açıkça belirlenir; keyfi AND/OR yapma.
+
+SERİLLEŞTİRME:
+- docs/contracts/search-intent-v2.schema.json kaynak kontrat.
+- Python Pydantic üretimi veya JSON Schema doğrulama; TS OpenAPI client tipleri.
+- JSON test fixtures sürümlü; eski istemci yeni alanları güvenli yönetir.
+- Ham AST URL'ye çevrilmez. ProviderCapabilities ve VerifiedMappingRegistry
+  filtreleyerek yalnız desteklenen/kanıtlı koşulları uygular.
+- AST ve UI düzleştirme ayrı serializer; birini diğerine göre bozma.
+
+======================================================================
+07C. VERİ STRATEJİSİ, ONTOLOGY VE ANNOTATION (YENİ)
+======================================================================
+HEDEF: Eğitim, doğrulama ve test için güvenilir TÜRKÇE E-TİCARET QUERY DATASET.
+Veri kalitesi model kapasitesinden daha önemlidir. Dataset marka/ürün içeriklerinin
+hukuka aykırı toplanmasıyla oluşturulamaz. Ticari marka adlarını örnek sorgularda
+kullanmak başka, kişisel/üçüncü taraf içeriğini izinsiz kopyalamak başkadır.
+
+1) KAPSAM VE ETİKET ŞEMASI:
+  intent: product_search | refine_search | unsupported | ambiguous;
+  slots: CATEGORY, BRAND, COLOR, SIZE, MATERIAL, PRICE_MIN, PRICE_MAX,
+         ATTRIBUTE, NUMBER, UNIT, MODEL, RATING_MIN, REVIEW_COUNT_MIN;
+  relations: HAS_UNIT, BOUND_ON, NEGATES, ALTERNATIVE_WITH, MODIFIES;
+  modality: required | preferred | prohibited | approximate;
+  ambiguity: yes/no + kind; can_abstain; domain_product_category.
+- Label taxonomy ADR ve JSON Schema ile dondurulur; sessiz yeniden isimlendirme yok.
+- Token classification için BIO/BILOU etiketlerini ayrı türet; koşul kapsamını
+  yalnız BIO etiketiyle çözmeye çalışma.
+
+2) VERİ TOPLAMA, ZAMANLAMA:
+  W4: M0 baseline için ~200 seed örnek (elle tasarlanmış zor + yaygın ifade).
+  W6: Gerçek iOS/Android cihaz STT oturumlarından gözlemlenen gerçek ASR hata örüntüleri.
+  W7: 250 altın standart örnek ile ontology + annotation rehber doğrulaması.
+  W8: En az 400–800 manuel incelenmiş bağımsız ifade + gerçek ASR dilimi; disagreement listesi.
+  W9–W10: 1.500–3.000 toplam sorgu hedefi (eğitim varyasyonları dahil); sentetik varyasyonlar
+  yardımcıdır, bağımsız gerçeklik ölçümü değildir.
+  Tek geliştirici 5 saat/gün: bu sayılar kesin vaat DEĞİL; kaliteyi düşürmeden
+  1.000+ etiketi zamanında yetiştiremezsen takvim/gate yeniden planlanır.
+- Kritik OOD/ASR/negation/OR test setleri küçük olsa bile DERİN manuel inceleme.
+- 2. etiketleyici elde edilebiliyorsa alt kümede kör ikinci anotasyon;
+  yoksa iki zamanlı self-review + yayımlanmış tutarsızlık listesi.
+- Verinin provenance/lisans/kaynak türünü satır bazında tut.
+- Gerçek kullanıcı sorgularını anonim varsayma; açık izin, retention ve
+  kişisel veri çıkarımı doğrulanmadan eğitim verisine dahil ETME.
+
+3) STRATİFİKASYON:
+  kategori: giyim / elektronik / ev / kozmetik / farklı/unknown;
+  cümle biçimi: konuşma dili / yazılı / emoji / typo / ASR transkript;
+  mantık: pozitif / NOT / OR / AND / aralık / çatışma / muğlak;
+  sayı: fiyat / ölçü / ürün modeli / tarih / beden;
+  marka: tek / çoklu / excluded / belirsiz;
+  uzunluk: kısa (<5 token), orta, uzun (>25 token);
+  dil: Türkçe, Türkçe+İngilizce ürün terimi, konuşma varyantı.
+- Az görülen ama yüksek riskli negatif ve sayısal köşe vakalarını oversample et.
+- Yalnız kolay 'siyah mont 3000 TL' örnekleriyle başarılı skor elde etme.
+
+4) SPLIT VE VERİ SIZINTISI:
+  train/dev/test: başlangıç 70/15/15 veya grup bazlı alternatif; önce veriyi
+  marka+şablon+yakın parafraz/ürün gruplarına ayır, sonra split yap.
+  Aynı şablonun '3 bin altı mont' ve '5 bin altı mont' varyantları farklı
+  split'lere dağılırsa model ezberleyip gerçek genelleme görüntüsü verebilir.
+  Paraphrase similarity kümeleme, template family IDs, product-family holdout.
+  Test seti dondurulur; model seçimi için dev, son rapor için test kullanılır.
+  İlerleyen gerçek sürümlerde temporal drift/out-of-domain test ayrı tutulur.
+  Random seed/split hash/data version manifest'i repo ve deney manifestinde.
+
+5) ETİKETLEME PRENSİPLERİ:
+  - Explicit span'i sadece cümlede söylenen yerden etiketle.
+  - Implicit normalized value ile yüzey span'i ayır.
+  - 'Nike olmasın' -> BRAND Nike + NEGATES ilişkisi; marka silinmez.
+  - 'çocuk montu' -> TARGET_AUDIENCE=child; 'çocuk işi olmasın' farklı semantik.
+  - '3000 civarı' -> approximate, kesin upper bound yaratma.
+  - 'siyah ya da lacivert' -> renk OR; iki ayrı AND olarak etiketleme.
+  - 'koyu renk olsun' -> abstract color preference; rastgele siyaha dönüştürme.
+  - 'iPhone 13' -> model name + generation 13; fiyat veya ekran boyu değil.
+  - 'az sesli' -> qualitative SOUND_LEVEL preference; dB eşiği uydurma.
+  - STT belirsizlikleri transcript annotations ayrı; doğru kelimeyi
+    kullanıcı söylememişse modele ground truth diye yazma.
+  - Cümlede çelişki varsa iki constraint + conflict label sakla.
+  - Birden çok makul etiket varsa annotation guideline güncelle, ikisini
+    sessizce birleştirme; unresolved label olarak beklet.
+
+6) DOSYALAR:
+  data/annotations/annotation-guidelines.md (>=20 pozitif/negatif örnek).
+  data/ontology/categories.v1.yaml + attributes.v1.yaml + aliases.v1.yaml.
+  data/seed/*.jsonl, data/splits/train.jsonl, dev.jsonl, test.jsonl.
+  data/manifests/dataset-v*.json (hash, provenance, license, split, counts).
+  data/quality/annotation-audit.md; data/quality/leakage-report.md.
+  scripts/nlp/validate_annotations.py, split_by_group.py, audit_leakage.py.
+- Hak ve gizlilik: açıkça izin verilmemiş üçüncü taraf veri koleksiyonu YOK.
+- Büyük veri/binary artifacts Git'e girmez; sürümlü özel artifact store veya
+  izinli DVC + remote değerlendirilir. Küçük sentetik golden fixtures repo'da.
+
+7) ANNOTATION KALİTE KONTROLÜ:
+  JSON Schema validasyon %100; overlap/offset tests; duplicate/near duplicate audit.
+  İkinci anotatör varsa Krippendorff alpha veya Cohen kappa, ilişki etiketi
+  için ayrı ölçüm; ikinci anotatör yoksa kendin agreement ölçümü iddia etme.
+  Schema update -> migration + geçmiş data compatibility check.
+  Annotator üzerinde model önerileriyle otomatik onay bias'ına dikkat et.
+  En az 50 negatif, 50 OR, 50 fiyat, 30 OOD ve 30 STT-kirli örnek ayrı bucket.
+
+======================================================================
+07D. BASELINE, ÖĞRENEN MODELLER, ANLAM ÇÖZÜMLEME VE EVAL (YENİ)
+======================================================================
+NLP AŞAMASI GELDİĞİNDE DÖRT ADAYI DENE, VERİ OLMADAN MODEL SEÇME:
+M0: Dictionary + regex + finite-state/constraint grammar (kontrol baseline + kalıcı sayı/mantık çekirdeği).
+M1: Character n-gram TF-IDF + linear classifier; intent/category/ood için basit ML.
+M2: DistilBERTurk fine-tuning birincil üretim adayı (açık uçlu slot span + kategori/OOD;
+    BERTurk yalnız çevrimdışı üst-sınır kıyaslaması için). Üretim için ONNX Runtime (INT8/FP16) export.
+M3: Kural-kilitli sayı/OR/NOT çekirdeği + DistilBERTurk ONNX span adayları + opsiyonel
+    semantic attribute candidate ranking (yalnız kanıtlı faydada).
+- 'BERT kullanmak' kalite garantisi değildir. Göreve göre M0 daha güvenilir olabilir.
+- Model seçimini test setiyle değil dev setiyle yap. Dev için hiperparametre
+  araması sonrası nihai test yalnız rapor aşamasında.
+- Label scarcity'de transfer learning, class weighting, sample weighting ve
+  stratified sampling; hiperparametre araştırmasını bounded budget ile tut.
+
+ÖNERİLEN EĞİTİM ALTYAPISI (NLP sprintinde dahil edilir):
+  Python 3.12; PyTorch, Hugging Face Transformers, Datasets, Evaluate,
+  seqeval, scikit-learn, sentence-transformers (semantic opsiyonel).
+  GPU erişimi yoksa küçük CPU baseline + küçük model; eğitim GPU üzerinde
+  gerekiyorsa açık kaynak/notebook/cloud fiyat ve kişisel veri kontrolü.
+  BERTurk adayları:
+    https://huggingface.co/dbmdz/bert-base-turkish-cased
+    https://huggingface.co/dbmdz/distilbert-base-turkish-cased
+  Eğitim yaklaşımı (token classification):
+    https://huggingface.co/docs/transformers/en/tasks/token_classification
+  Anlamsal eşleştirme adayları:
+    https://www.sbert.net/examples/sentence_transformer/applications/semantic-search/README.html
+  Modellerin lisans/versiyon/weights güvenliği, inference maliyeti ve
+  ticari kullanım şartları model bazında doğrulanmadan üretime alınmaz.
+
+MODEL TASARIMI:
+A) Typed numeric parser (HER ZAMAN deterministik): fiyat, birim, numeric product attributes.
+B) Slot span extraction: sözlük kuralları + daraltılmış rollü fine-tuned DistilBERTurk (ONNX INT8/FP16)
+   ile yalnız sözlüğün kaçırdığı açık uçlu varlık/ürün tipi/özellik adayları.
+C) Category/intent inference: rules, cheap linear classifier (M1), or DistilBERTurk ablation.
+D) Boolean parser (HER ZAMAN deterministik): NOT/OR/AND/modality lexical dependency + AST
+   constraints; salt BIO token classification'a devredilmez, ML rule polarity'sini bozamaz.
+E) Semantic alias resolver: 'yağmur geçirmeyen' ~ water resistance candidate;
+   exact database attribute seçimi için scored shortlist ve taxonomy gate.
+F) OOD detector: düşük güvenli, bilinmeyen kategori ve takip konuşma
+   (tek cümlelik ürün araması dışı) durumunda açıklama/soru.
+G) Correction loop: kullanıcı kriteri düzeltirse geçici current query için
+   düzeltmeyi koru; eğitim feedback'i ayrı izin ve kalite kapısından geçer.
+
+SEMANTIC MATCHING SINIRI:
+- Semantic model katalogdaki 'benzer' alanı aday olarak döndürür.
+- 'Üzerine su dökülünce bozulmasın' -> suya dayanıklılık adayı olabilir;
+  su geçirmezlik sertifikası/kanıtı olmadan kesin olarak çevrilmez.
+- Semantic score ve gerçek filter capability iki ayrı değerlendiricidir.
+- İlk sürümde ürün içeriği olmadığından review-based quality, sahte yorum,
+  'iyi batarya' doğrulaması veya kişiye özel ürün eşleşmesi YAPILAMAZ.
+- Çoklu semantik aday top-k <low confidence> ise kullanıcıya seçim sun.
+
+DENEY DİSİPLİNİ:
+  - Her deney için git SHA, dataset hash, model SHA, tokenizer, seed,
+    training args, GPU/CPU türü, süre, metrik, maliyet, artifact path kaydet.
+  - Model card: intended use, limits, failure modes, fairness slices,
+    training data provenance, license, risk assumptions.
+  - MLflow lokal veya basit metrics JSON + artifact store: ekip 1 kişi olduğu
+    için önce hafif deney kayıtları, ölçeklenirse MLflow.
+  - Transformers eğitimini API request süreci içine KOYMA; train script/CI
+    offline çalışır, inference versiyonlu artefact'tan yüklenir.
+  - Dev ve test veri setinde rastgele split yerine grup bazlı holdout.
+  - 3 seed ile varyans veya (budget yetmezse) az sayıda kontrollü tekrar;
+    tek koşudaki skorun kararlılık garantisi olmadığını raporla.
+
+ÖLÇÜM BİRİMLERİ:
+  Slot span micro/macro Precision/Recall/F1 (BIO labels için seqeval).
+  Category & intent macro F1 (sınıf dengesizliği nedeniyle accuracy tek değil).
+  Critical exact-price accuracy (numeric value + bound + TRY).
+  Boolean scope exact accuracy (NOT, OR, AND + bound scope).
+  Constraint tree exact-match accuracy (tam AST doğru mu?).
+  Per-scenario F1: price, gender/size, electronics, multi-brand, typo, ASR.
+  Unsupported/OOD recall and false accepted constraint rate.
+  Semantic candidate Recall@K, MRR, top-1 accuracy (varsa ve etiketli kanıt).
+  Calibration: ECE/Brier score ve coverage-risk curve.
+  STT: WER/CER ayrı; end-to-end parse quality hem temiz hem ASR transcript'te.
+  Latency: p50/p95/p99, model warm/cold, RAM, CPU, concurrency, throughput.
+  Cost: model endpoint CPU/GPU ve altyapı; gereksiz LLM/token maliyeti yok.
+
+QUALITY GATE HEDEFLERİ (başlangıç, ölçülmüş başarı değil):
+  Critical false-positive constraint rate <= %0.5 (özellikle NOT/fiyat).
+  Explicit price bound + amount exact >= %98.
+  Negative scope exact >= %97 (zorlu, elle incelenmiş ayrı slice).
+  OR group exact >= %95 (çoklu marka ve renk alt kümesi).
+  Slot entity micro F1 >= %93, macro F1 ayrıca raporlanacak.
+  Constraint AST exact match >= %85, zor sorgularda segment raporu.
+  OOD/ambiguity detection recall >= %90 (negatif precision ile birlikte).
+  Birleşik tek-istekli /search/parse (NLP + bellek-içi ilk LinkResolution, Zero-DB) p95 <= 350ms
+  (ONNX INT8/FP16 CPU çıkarım bütçesi ~30-50ms); rule-only M0 p95 <= 200ms;
+  kullanıcı kriter düzenlemesi /search/resolve (NLP'siz, Zero-DB) p95 <= 80ms.
+  Modelden gelen unsupported bir alana zorunlu filtre uygulanmaz (%100).
+  NOT, para ve kimlik gibi yüksek zarar kategorilerinde tek hatalı release-blocker
+  regresyon çözülmeden production'a geçilmez.
+  NOT: Bu eşikler aspirasyon; veriseti dağılımıyla ve iş riskiyle belgelenecek;
+  hiçbir modelin %100 kusursuz olacağı iddia edilmiyor.
+
+SOMUT ABLATION RAPORU:
+  M0 rules only vs M1 linear vs M2 transformer vs M3 hybrid.
+  Her biri için tablo: total F1, critical exact, AST exact, OOD recall,
+  p95 latency, model RAM, infra cost, maintenance burden, confidence ECE.
+  Eğer M2, M0'ı kritik ölçümlerde geçemiyorsa sırf AI göstermek için deploy ETME.
+  Eğer M3 kaliteyi artırıyor ama latency/kost hedefi aşıyorsa shadow ya da
+  yalnız düşük güvenli istekler için guardlı enable et.
+
+HATA ANALİZİ / RETRO:
+  - Her değerlendirmenin en kötü 50 hatasını kategori/kök nedenine göre kodla.
+  - 5 tekrar eden hata sınıfını backlog'a yaz; fixture ve annotation ekle.
+  - Parametre güncellemesinden kaynaklanan provider hatasını NLP hatası diye sayma.
+  - Confusion matrix ve precision-recall eğrisi sürümlü rapora girer.
+  - Hata azaldı mı sorusunun cevabı bağımsız test ile ölçülür.
+
+======================================================================
+07E. INFERENCE, FALLBACK, MLOPS VE NLP'Yİ ÜRETİME ALMA (YENİ)
+======================================================================
+HEH v2 NLP MİMARİSİ (TEK BACKEND, AYRI UYGULAMA MODÜLÜ):
+services/api/src/heh_api/domain/                   -> saf typed business semantics.
+services/api/src/heh_api/application/parse_search.py -> NLP use-case.
+services/api/src/heh_api/infrastructure/nlp/        -> rule/model inference adapters.
+services/api/src/heh_api/infrastructure/trendyol/   -> dış URL adapter; NLP içine KOYMA.
+ml/heh_nlp/                                         -> training/evaluation experiments.
+
+ADAPTER SÖZLEŞMESİ:
+- QueryUnderstandingPort.parse(query, context) -> SearchIntent + diagnostics.
+- RuleBasedQueryUnderstandingAdapter (primary fallback + kalıcı sayı/fiyat/AND-OR-NOT çekirdeği).
+- ONNXQueryUnderstandingAdapter (onnxruntime CPU, INT8/FP16; SHA256-verified .onnx + tokenizer.json;
+  üretim API konteynerinde PyTorch/Transformers bağımlılığı YOK).
+- HybridQueryUnderstandingAdapter (kural-kilitli AST + ONNX eksik span aday birleştirme + trust policy).
+- SemanticAliasResolver (optional, cannot emit verified provider filters).
+- QueryIntentValidator (schema, category, unit, policy checks).
+- ModelRegistry (artifact SHA, dataset version, ONNX parity metrics, status).
+- FeatureFlag service: NLP_MODE=rules|shadow|hybrid; default rules unless gate PASS.
+
+MODEL SERVING:
+- Başlangıç ve üretim: FastAPI process içinde yalnız PyTorch'suz ONNX Runtime (INT8/FP16) CPU
+  çıkarımı (hedef tek sorgu ~30-50ms, düşük RAM); tam eğitim ortamı ml/ altında izoledir.
+- API worker sayısı ve ONNX session RAM çoğaltma etkisini benchmark et (intra/inter_op_num_threads).
+- Ağır model veya yüksek talep halinde AYRI inference process/container,
+  HTTP timeout/backoff/circuit breaker ve connection pool; gereksizse kurma.
+- process startup load, warmup, readiness ve model artifact checksum (ONNX + tokenizer).
+- Full training hiçbir API/gateway içinde çalışmaz.
+- Model download production boot sırasında üçüncü taraf erişimine bağımlı
+  olmasın: sürümlü ONNX artifact + hash + izin/lisans doğrulaması.
+- Tokenization budget, max input length, user-provided text sanitization.
+- Inference timeout (örnek 120ms internal ONNX budget, ölçümle ayarla) -> anında RuleBased fallback.
+- Batch inference yalnız gerçek throughput gereksinimi varsa; tek sorgu
+  düşük gecikme hedefinde gereksiz sırada bekletme.
+
+GÜVEN POLİTİKASI:
+- 'confidence': model olasılığı ≠ gerçek doğruluk. Dev'de kalibrasyon ölç.
+- Slot bazında farklı eşikler: price/negation yüksek precision, ambivalent
+  color/material semantics daha temkinli.
+- 'High confidence' olsa dahi kullanıcı onayı ve provider verification ayrı.
+- Score threshold tuning sadece DEV setinde yapılır.
+- Low confidence -> review_required; no silent forced redirect.
+- 'uncertainty' API alanı açık: unknown/ambiguous/conflicting/low_confidence.
+
+ROLLOUT:
+1. Rules-only stable; golden eval > gate.
+2. ML model shadow: aynı sorgu input'undan rules+ML çıktı üret; kullanıcıya
+   hâlâ rules sun, karşılaştırmalı metric ve hata logu PII olmadan tutulur.
+3. %5 izinli trafik veya staging cohort hybrid; riski yüksek alanlarda rules safeguard.
+4. %25 -> %50 -> %100, her aşamada metrics ve rollback kriterleri.
+5. Artan critical parse error, p95 latency veya crash -> NLP_MODE=rules rollback.
+- Canlı sorgu kaydı kullanıcı izni gerektirir; shadow mode bile retention ve
+  gizlilik gereksinimlerini aşamaz. Feedback yalnız onaylı yöntemle toplanır.
+
+SÜREKLİ ENTEGRASYON:
+- Her PR: ruff, mypy/pyright opsiyonel, pytest, deterministic golden smoke,
+  annotation schema check, dataset leakage smoke, parser policy property tests.
+- Gecelik/scheduled veya model PR: full golden evaluation ve model-vs-baseline
+  regression raporu. GitHub hosted runner'da her commit GPU train ETME.
+- Model training: workflow_dispatch, onaylı CPU/GPU host, reproducible seed,
+  cache, pinned deps, checksum, artifact retention.
+- Promotion: model artifact imzası/hash, test set eval, cost/latency,
+  approval note ve rollback available şart.
+- Promotion ile mobile release birbirinden bağımsız; kontrat sürümleri uyumlu.
+
+MODEL GÖZLEMLEME:
+- Versioned aggregate counters: model selection, fallback reason, error class,
+  category bucket, parse latency; ham query/PII default kapalı.
+- Drift: accepted/corrected slot ratio, OOD distribution, confidence bins,
+  kategoriler arası hata, yeni terim sayısı (izinli/anonim agregasyon).
+- Kullanıcının edit ettiği filtreyi doğruluk etiketi sayma; edit bazen stil kararı.
+- Model retrain otomatik yayınlanmaz; analiz, etiketleme ve gate gerekir.
+- Incident runbook: 'model hallucinated banned brand', 'price corruption',
+  'artifact missing', 'memory leak', 'filter mapping regression'.
+
+ARTEFAKTLAR / DİSİPLİN:
+  ml/heh_nlp/configs/{baseline,berturk,distilberturk}.yaml
+  ml/heh_nlp/train.py | evaluate.py | export_onnx.py | predict.py | compare.py
+  ml/heh_nlp/models/README.md (weights/onnx Git'e commit edilmez)
+  docs/nlp/model-card.md | dataset-card.md | error-taxonomy.md
+  docs/nlp/annotation-guidelines.md | model-selection-adr.md
+  docs/quality/nlp-metrics-v*.json | nlp-regression-report.md
+  docs/runbooks/nlp-rollback.md | nlp-data-deletion.md
+
+======================================================================
+07F. NLP-RISK GATE, ÜRÜNLEME VE BAŞARI KRİTERLERİ (YENİ)
+======================================================================
+W1–W3: HEH'in vitrin kategorilerde filtre bağlantılarına gerçekten yararlı ölçüde çevrilebildiği
+kabul edilmeden büyük dataset/model eğitim maliyetine girilmez.
+W4: Deterministik M0 kural baseline (sayı/fiyat + AND/OR/NOT) ve 200 çekirdek golden smoke.
+W5–W6: Mobil Metin + Gerçek Cihaz STT uçtan uca dikey dilimi (çalışan ürün + gerçek ASR hata gözlemi).
+W7: Ontology + AST schema + annotation guideline dondur; yanlış iş tanımı üzerinden etiketli veri üretme.
+W8: Grup bazlı dataset split + quality audit + gerçek ASR dilimi; etiket kalitesi kötü ise fine-tuning başlatma.
+W9: DistilBERTurk/M1 aday deneyleri + model card draft; kaynak/weights lisansı net.
+W10: Kural-öncelikli hybrid ablation + calibration + ONNX (INT8/FP16) quantization + GATE-NLP-D.
+W11: ONNX shadow/rollback/serving + GATE-NLP-PROD.
+W12: 5–8 vitrin kategoride derin Trendyol doğrulaması + TrendyolRouteStrategy sertleştirmesi.
+
+MODELÜ ÜRETİME ALMA KARAR AĞACI:
+- Rules kritikleri doğru, ML başarısız -> rules release, ML research backlog.
+- ML başarıyı artırıyor ama p95 yavaş -> offline optimize/quantize veya gated use.
+- ML yanlış kritik alanlar üretiyor -> reject/abstain, sadece rules trusted.
+- ML net fayda sağlıyor ve tüm güvenlik/latency/eval koşulları sağlanıyor -> hybrid.
+- Provider mapping zayıf -> NLP başarılı olsa bile mağaza filtresi iddiası YOK;
+  HEH ürünü 'akıllı arama ifadesi oluşturucu' olarak şeffaf konumlandırılır.
+
+ÇALIŞMANIN AI ENGINEER PORTFÖY DEĞERİ:
+1. Türkçe alışveriş sorgularına özgü problem formülasyonu ve ontology.
+2. Benchmark / golden set / annotation handbook / leakage kontrolü.
+3. Deterministik baseline ve fine-tuned transformer karşılaştırması.
+4. Complex boolean constraint graph + negation scope çözümleme.
+5. Confidence calibration, abstention ve insan onayı.
+6. P95 inference latency, CPU-RAM maliyeti, failover ve versiyonlu deployment.
+7. Sonuçları saklamayan anonim event metrikleri ve veri gizliliği.
+8. Ayrı provider mapping kalite değerlendirmesi.
+9. Ablation ve hem başarısız hem başarılı örneklerin dürüst raporu.
+10. Readme/Model Card'da reproducible command + trained artifact checksum.
+
+Bu işin niteliği bir LLM API çağrısı yapmak değildir; deney tasarımı,
+problem temsili, Türkçe verinin elle incelenmesi, model eğitimi, ölçüm,
+deploy ve işletim döngüsünün tamamıdır. Ancak 'mükemmel' sonuç garanti
+edilemez; yüksek kalite objektif gate ve kullanıcı testleriyle kanıtlanır.
+
+======================================================================
+08. TRENDYOL ADAPTÖRÜ, URL SÖZLEŞMESİ VE KANIT ZİNCİRİ
+======================================================================
+Trendyol'un satıcı Marketplace API'si, her ürünü tüketici gibi aramaya yönelik açık API
+olarak kabul EDİLEMEZ. Arama URL'lerindeki gayriresmî parametreler değişebilir.
+
+KAPSAM STRATEJİSİ — DAR VE DERİN (5-8 VİTRİN KATEGORİ) + DÜRÜST UZUN KUYRUK:
+- Vitrin Kategoriler (5-8 yüksek frekanslı dikey: Mont/Üst Giyim, Ayakkabı, Kulaklık,
+  Laptop, Akıllı Telefon, Çanta/Aksesuar vb.): Marka, renk, beden, fiyat ve seçili temel
+  özelliklerde gerçek web/mobil kanıtına bağlı tam FILTER_VERIFIED desteği ve haftalık
+  regresyon kontrolü.
+- Uzun Kuyruk Kategoriler (diğer tüm kategoriler): Tek geliştiricinin tüm kategorilerdeki
+  binlerce facet ID'sini elle doğrulaması ölçeklenmez; bu nedenle doğrulanmamış kategori-özel
+  facet ID'si asla uydurulmaz. Bu kategorilerde dürüstçe doğrulanmış genel fiyat aralığı
+  (prc -> FILTER_VERIFIED) + akıllı arama metni (q -> QUERY_ONLY) + açık UNSUPPORTED
+  raporlama moduna düşülür.
+
+TRENDYOL ROTA STRATEJİSİ (TrendyolRouteStrategy) VE ZERO-DB SNAPSHOT:
+- Trendyol birçok kategoride yalnız ?key=val değil, kategoriye özgü SEO slug'ları ve
+  -x-g...-c...-b...-a... şeklinde birleşik facet path kodları kullanır. URLBuilder bunu
+  iki açık stratejiyle soyutlar:
+    1) VerifiedFacetPathStrategy: Kanıtlanmış SEO slug + -x- facet segmentleri (yalnız vitrin kategoriler).
+    2) CanonicalSearchQueryStrategy: Kanıtlı /sr?q=...&prc=... parametreleri (genel/uzun kuyruk fallback).
+- Kanıtlanmamış bir -x- segmenti asla sentezlenmez; yalnız registry'de doğrulanan kalıp üretilir.
+- Runtime eşleme sözlüğü PostgreSQL'den değil, imzalı/versiyonlu repo JSON'undan yüklenen
+  bellek-içi salt-okunur (in-memory immutable) snapshot'tan okunur (0 ms DB maliyeti).
+
+LinkResolution modeli:
+  input: CanonicalCriteria + category_context + mapping_version
+  output:
+    provider = 'trendyol'
+    https_url = 'https://www.trendyol.com/...' [yalnız izinli host]
+    applied_filters[] = her biri parametre ve doğrulama referansıyla
+    query_only[] = metin olarak arananlar
+    unsupported[] = uygulanamayanlar, gerekçe, kullanıcıya öneri
+    warning_level = none|partial|critical
+    verified_at, mapping_version
+
+Üç durumun teknik adları:
+  FILTER_VERIFIED    : gerçek site/uygulama testinde ilgili filtre seçilmiş.
+  QUERY_ONLY         : q metni olarak gidiyor; kesin filtre iddiası yok.
+  UNSUPPORTED        : negatif / belirsiz / olmayan filtre, sessiz kabul yok.
+  UNKNOWN            : ürün sayfası/URL davranışı doğrulanmadı, 'verified' sayılmaz.
+
+Bir filtre eşlemesini aktive etme şartları:
+- En az bir gerçek web ve bir gerçek mobil geçiş testi (mümkünse farklı oturum).
+- Parametre + test tarihi + kategori + test sonucu + ekran kanıtı + tester notu.
+- Çoklu değer kombinasyon testi: aynı alan OR, başka alanla AND, min/max.
+- Kategori değiştirme sonrası parametrenin hâlâ semantiği koruduğu kontrol.
+- Regresyon başarısızsa mapping status = disabled/UNKNOWN; yeni linklerde kullanılmaz.
+
+Yapılandırma örnek kaydı:
+{
+  "provider":"trendyol", "category":"headphones", "field":"brand",
+  "value":"Sony", "param":"<VERIFIED_PARAM>", "param_value":"<VERIFIED_ID>",
+  "status":"UNVERIFIED", "tested_at":null, "evidence":null,
+  "notes":"Bu satır örnek; gerçek marka ID'si veya URL doğrulaması değildir."
+}
+
+GÜVENLİ URL İNŞASI:
+- Bilinmeyen parametre uydurma; yalnız allowlist'teki anahtarları kabul et.
+- Değerleri URL encode et, string concatenation ile enjeksiyon yapma.
+- https + allowlisted hostname, host normalizasyonu, boş kullanıcı yönlendirmesi yok.
+- Open redirect engelle: istemciden keyfî redirect URL kabul etme.
+- Haricî mağazaya çıkış kullanıcı eylemiyle; deep link desteklenmezse web aç.
+- Parametreleri kategori bazında güvenli sırayla kur; uygulama/WEB davranış farkını raporla.
+- q'da marka adını görmek, marka filtresinin uygulanmasıyla karıştırılmaz.
+- 'haricî marka hariç' gibi NOT filtre uygulanmıyorsa ürünü garanti etme.
+- Filtre parametrelerini güncellemek için sunucuda versioned release + geri alma mekanizması.
+
+İLK TEST MATRİSİ:
+Kategori            Fiyat  Marka  Renk  Beden  Özellik  Negatif  Sıralama
+Erkek mont          [ ]    [ ]    [ ]   [ ]      [ ]     [ ]      [ ]
+Kulaklık            [ ]    [ ]    [ ]   N/A      [ ]     [ ]      [ ]
+Laptop              [ ]    [ ]    N/A   N/A      [ ]     [ ]      [ ]
+
+Test prosedürü:
+1. Trendyol web/app filtre seçmeden URL ve ekran kaydı.
+2. Tek filtreyi UI'dan seç, oluşan URL'yi ve seçili filtreleri not al.
+3. 2 filtre daha ekle, URL delta ve filtre işaretlerini karşılaştır.
+4. Bağlantıyı yeni oturum/cihazda aç; filtre seçimi korunuyor mu bak.
+5. URL builder ile sıfırdan üret, aynı ekrandaki aktif etiketleri karşılaştır.
+6. Parametre kaydı için kanıt üret, tarih at; çalışmıyorsa doğrulanmadı.
+7. Haftalık veya mağazada büyük UI değişiminde smoke test yenile.
+
+Go/No-Go karar kuralı:
+- 5. gün sonunda fiyat+en az bir marka veya kategori filtresi bile tutarlı
+  doğrulanamıyorsa ürün pozisyonunu yeniden değerlendir (önce sadece akıllı
+  arama oluşturucu olma ihtimali). Bu iş yüzünden tüm 18 haftalık planı körlemesine sürdürme.
+- İzinsiz scraping/otomatik site kontrolü için bot altyapısı kurma.
+- HEH'in Trendyol'un resmî ürünü olmadığı açık olmalı; logo/marka kullanımını denetle.
+
+======================================================================
+09. API TASARIMI: TEK KAYNAK, TİPLİ SÖZLEŞME
+======================================================================
+Temel prefix: /api/v1 | JSON, UTC tarih, UTF-8, HTTPS.
+OpenAPI, FastAPI Pydantic şemalarından üretilir; TypeScript istemci otomatik üretilir.
+
+GET  /api/v1/health/live         -> 200 {"status":"ok"}; DB ve dış bağımlılıktan bağımsız liveness.
+GET  /api/v1/health/ready        -> 200/503 bellek-içi mapping_snapshot + nlp_adapter hazır mı
+                                    (db_status alanı ayrı raporlanır; DB kesintisi çekirdek aramayı kapatmaz).
+POST /api/v1/search/parse        -> tek ağ isteğinde (1-RTT) SearchIntent AST + ui_constraints
+                                    + warnings + İLK LinkResolution önizlemesini döner (Zero-DB).
+POST /api/v1/search/resolve      -> yalnız kullanıcı UI'da kriter düzenlediğinde (USER_CORRECTION)
+                                    NLP koşturmadan güncel AST -> LinkResolution hesaplar (Zero-DB).
+GET  /api/v1/search/capabilities -> kategori/alan/vitrin kapsamı + sürüm (in-memory snapshot, Zero-DB).
+GET  /api/v1/me                  -> hesap açıkken profil.
+GET  /api/v1/history             -> sadece giriş yapmış kullanıcı.
+POST /api/v1/history             -> giriş yapmış, açıkça kaydetmek isteyen kullanıcı.
+DELETE /api/v1/history/{id}      -> yalnız sahibine ait kayıt.
+DELETE /api/v1/history           -> sahibinin tüm geçmişini sil.
+DELETE /api/v1/me                -> kullanıcının silme iş akışını tetikle.
+
+ÖRNEK /search/parse isteği:
+{
+  "text":"3000 TL altı siyah M beden mont, Nike olmasın",
+  "locale":"tr-TR",
+  "input_source":"text",
+  "client_request_id":"UUID"
+}
+Başarılı yanıt (1-RTT: AST + kriterler + ilk LinkResolution önizlemesi birlikte):
+{
+  "request_id":"UUID", "parser_version":"1.0.0", "nlp_mode":"rules",
+  "criteria":[...], "warnings":[], "confidence_state":"review_required",
+  "resolution": {
+    "provider":"trendyol",
+    "url":"https://www.trendyol.com/...",
+    "mapping_version":"2026.11.23.1",
+    "applied_filters":[...],
+    "query_only":[{"field":"color","value":"siyah","reason":"No verified color filter"}],
+    "unsupported":[{"field":"brand","operator":"not_in","value":"Nike",
+                    "reason":"Negative brand exclusion not verified"}],
+    "verification_notice":"Bu sonuçlar kesin ürün eşleşmesi garantisi değildir."
+  }
+}
+
+ÖRNEK /search/resolve isteği ve yanıtı (yalnız kullanıcı kriter sildiğinde/düzenlediğinde):
+{
+  "request_id":"UUID", "provider":"trendyol",
+  "url":"https://www.trendyol.com/sr?...",
+  "mapping_version":"2026.11.23.1",
+  "applied_filters":[],
+  "query_only":[{"field":"color","value":"siyah","reason":"No verified color filter"}],
+  "unsupported":[{"field":"brand","operator":"not_in","value":"Nike",
+                  "reason":"Negative brand exclusion not verified"}],
+  "verification_notice":"Bu sonuçlar kesin ürün eşleşmesi garantisi değildir."
+}
+
+HTTP hata şeması (tüm hatalarda):
+{
+  "error": {
+    "code":"INVALID_QUERY",
+    "message":"Arama metnini kontrol et.",
+    "request_id":"UUID",
+    "details":[]
+  }
+}
+
+HTTP durumları:
+200 başarı; 400 bozuk girdi; 401 auth gerekli; 403 yetkisiz;
+404 kayıt yok; 409 sürüm/çakışma; 422 şema ihlali; 429 limit;
+500 sunucu hata; 503 servis/kritik dependency geçici yok.
+
+KONTRAT KURALLARI:
+- Versioned /api/v1; geriye dönük uyumu bozan değişiklik ayrı major.
+- Input 500 karakteri aşmaz; aralıklar rasyonel sınırlarda.
+- Sunucu belirlemediği filter id'sini istemciden kabul etmez.
+- Bearer token yalnız korumalı hesap endpoint'leri için zorunlu; misafir parse mümkün.
+- Mobil API'ye CORS mantığını güvenlik zırhı gibi sunma; rate limit + abuse savunması ayrı.
+- POST arama işlemleri yan etkisiz/idempotent ve Zero-DB Hot Path kurallıdır:
+  /search/parse, /search/resolve ve /search/capabilities hiçbir koşulda PostgreSQL
+  bağlantısı açmaz; kullanıcı açıkça kaydetmek istemedikçe DB'ye yazma yapılmaz.
+- Response'ta uygulanmış kriter kanıtı ve mapping_version bulunur.
+- OpenAPI snapshot diff CI'da izlenir; mobil istemci kodu schema'dan üretilir.
+
+======================================================================
+10. POSTGRESQL VERİ MODELİ, GÖÇLER VE SAKLAMA
+======================================================================
+Veritabanı yalnız hesap, açık rızalı bulut geçmişi, silme orkestrasyonu ve çevrimdışı
+yönetim kayıtlarını tutar. Misafir arama ve filtre çözme hattı %100 bellek-içi immutable
+snapshot üzerinde çalışır (Zero-DB Hot Path); her aramada sunucuya profil veya sorgu yazılmaz.
+
+TABLO: users
+  id (uuid pk), auth_provider_sub (text unique not null), created_at,
+  updated_at, deletion_requested_at nullable, deleted_at nullable.
+  Email gibi doğrudan PII asgari; yönetilen identity provider'da tutulması tercih.
+
+TABLO: saved_searches
+  id (uuid pk), user_id (fk users, index), query_text (text, length check),
+  canonical_criteria (jsonb; schema_version), parser_version,
+  created_at, updated_at.
+  İlgili kullanıcı için sorgu limiti; silme işleminde cascade/anlaşılır politika.
+
+TABLO: user_preferences
+  user_id (pk/fk), history_sync_enabled (boolean), locale,
+  theme_preference, created_at, updated_at.
+  Hassas sağlık/kişisel özellikleri otomatik profilleme yok.
+
+TABLO: filter_mapping_releases
+  id, provider, category_key, version, status (draft/verified/disabled),
+  activated_at, created_at, notes.
+
+TABLO: filter_mapping_entries
+  id, release_id (fk), field, operator, canonical_value,
+  url_parameter, url_value, verification_status, verified_at,
+  evidence_reference, test_platform, expires_at nullable.
+  URL parametre kimlikleri gözlem/test kanıtıyla izlenir; minik katalogda
+  sürümlü repo JSON + DB'deki etkin sürüm metadata'sı da alternatif.
+  İlk fazda ve runtime arama hot path'inde tek yetkili kaynak = versiyonlu repo JSON'undan
+  boot'ta yüklenen bellek-içi immutable snapshot; runtime /search/* isteklerinde DB tablolarına
+  SQL sorgusu atılmaz (DB tabloları yalnızca yönetim/denetim ve çevrimdışı kanıt indeksi içindir).
+
+TABLO: privacy_deletion_requests
+  id, user_id, requested_at, completed_at, status, error_code nullable.
+  PII minimizasyonu; işlemi kontrol edilebilir kılar; hukukî saklama ayrı danışılır.
+
+TABLO: redirect_events (opsiyonel, analitik etkinse)
+  id, timestamp_bucket, platform, outcome, mapping_version,
+  category_bucket; query_text, URL'nin tamamı veya kullanıcı kimliği YOK.
+  Ticari satış/komisyon değil sadece kullanıcı eylemi sayısıdır.
+
+INDEX / MIGRATION:
+- saved_searches(user_id, created_at DESC); kapsamlı arama yoksa GIN gereksiz.
+- Bütün DB değişiklikleri Alembic migration ve downgrade stratejisiyle.
+- Bir schema sürümü hem eski hem yeni API dağıtımıyla uyumlu olacak şekilde rollout.
+- Expand -> deploy -> backfill -> contract; üretimde yıkıcı migration tek adımda yok.
+- Yerel geliştirmede PostgreSQL Docker Compose; CI testlerinde ayrı temiz DB.
+- Staging ve production credentials, DB ve yedekler fiziksel/mantıksal ayrılmalı.
+- Üretim erişimi minimum yetkili DB rolü; admin rolü runtime'da kullanılmaz.
+
+LOCAL STORAGE:
+- Anonim geçmiş uygulamanın kendi SQLite DB'sinde.
+- Gereksiz PII saklama yok; kullanıcının manuel silmesi + kayıt kapatma.
+- Hesap açınca geçmişi buluta taşıma otomatik değil; açık seçimle.
+- Gizli tokenlar SQLite/AsyncStorage'a konmaz, SecureStore kullanılır.
+- Uygulamayı kaldırma sonrası widget/OS cache, backup davranışları test edilir.
+
+YEDEKLEME / KURTARMA:
+- Production günlük şifreli DB yedekleri ve sağlayıcı PITR seçeneği değerlendirilir.
+- Yedekler için 30 gün hedefi yalnız uygulanacak politika ve sözleşmeye göre kesinleşir.
+- Restore tatbikatı staging'e yapılır; 'yedek var' tek başına başarı değildir.
+- Varsayılan RPO <= 24 saat, RTO <= 4 saat başlangıç HEDEFİ; test ile doğrula.
+- Hesap silme taleplerinin backup yaşam döngüsü ve yasal istisnaları gizlilikte açıklanır.
+
+======================================================================
+11. KİMLİK, HESAP VE YETKİLENDİRME
+======================================================================
+İlke: Kullanıcı HEH'in çekirdek arama fonksiyonunu giriş yapmadan kullanabilir.
+Hesap yalnız geçmişi cihazlar arasında senkronize etmek gibi gerçek fayda sunar.
+
+V1 hesap akışı:
+- Yönetilen sağlayıcı ile e-posta OTP / magic link (hesap özelliği sürüm kapısı).
+- Mobil auth token -> güvenli depoda; FastAPI imzalı JWT'yi JWKS ile doğrular.
+- JWT 'sub' kullanıcı id eşleşmesinde tek yetkili değer; istemciden user_id kabul etme.
+- İzinler: history.read, history.write, user.delete; her kaynak user_id ile izole.
+- OTP spam, brute-force, magic-link replay ve token rotasyonu sağlayıcı + API ile korunur.
+- Token expiry/refresh işleyişi ve offline hata kullanıcıya anlaşılır.
+- Sign in with Apple şartlarını tetikleyen üçüncü taraf sosyal girişler eklenirse
+  Apple politikası kontrolü zorunlu; mümkünse ilk sürümde sosyal giriş ekleme.
+
+GUEST -> AUTH MIGRATION:
+- 'Yerel geçmişi hesabına ekle?' onayı; default hayır.
+- UUID'lerle deterministik kayıt deduplication; birleşimde kullanıcı onayı.
+- Başarısız senkronizasyon yerel geçmişi silmez.
+- Çok cihazda sıralama UTC timestamp ile.
+
+DELETE ACCOUNT:
+- Uygulamadan gerçek silme akışı; iki adımlı onay + gerekiyorsa kimlik yeniden doğrulama.
+- FastAPI kendi DB ve sağlayıcı tarafında silme orkestrasyonu; iş hata alırsa
+  durum 'pending/retry' olarak izlenir, kullanıcıya yanlış 'silindi' mesajı verilmez.
+- Google Play için uygulama içi ve web üzerinden silme talep yolu hazırlanır.
+- Apple App Store için uygulama içi hesap silme seçeneği test edilir.
+- E-posta tokenı/arama geçmişi/kimlik atıfları ve log-retention envanteri tamamlanmadan
+  store release yapılmaz.
+
+======================================================================
+12. GÜVENLİK, GİZLİLİK, KVKK VE YASAL KONTROL
+======================================================================
+VARLIK ENVANTERİ:
+- Ses verisi (geçici, mikrofondan STT sağlayıcısına; saklanmaz varsayımı).
+- STT metni (kullanıcının girdisi; server parse için gönderilir).
+- Arama geçmişi (yerel; senkronize edilirse kullanıcı hesabına bağlı sunucuda).
+- Giriş kimliği ve token (yönetilen sağlayıcı + SecureStore).
+- Teknik olay logları (request_id, latency, hata kodları; ham arama yok).
+
+Tehdit modeli (STRIDE odaklı):
+T-01 Token çalınması -> SecureStore, kısa ömür, TLS, revocation.
+T-02 Başkasının geçmişini okuma (IDOR) -> server-side user binding + ownership tests.
+T-03 URL üzerinden open redirect -> sadece allowlisted Trendyol host + HTTPS.
+T-04 Başka host'a parametre enjeksiyonu -> kontrollü URL builder, encoding.
+T-05 Public parse API'ye bot yükü -> request size sınırı, edge rate limit, input timeout.
+T-06 Yanlış filtre ile yanıltma -> evidence/status + manuel kontrol + reg. test.
+T-07 Dependency/GitHub Actions zinciri -> lockfile, secret scanning, pinned actions.
+T-08 CI secret sızıntısı -> PR ortamına prod secret verilmez, environment protection.
+T-09 Hesap silme eksikliği -> end-to-end deletion runbook/test.
+T-10 Analytics PII sızıntısı -> SDK redaction, sampling, URL/query redaction.
+T-11 Ses arka planda kalması -> app lifecycle stop, explicit consent, resource cleanup.
+T-12 Sahte uygulama/marka ortaklığı algısı -> açık ürün dili, resmî ilişki iddiası yok.
+
+BACKEND GÜVENLİK TEMELİ:
+- HTTPS TLS, HSTS web domain için; şifreler .env.example'da boş açıklama olarak.
+- DB sorguları parametrik SQLAlchemy; raw SQL zorunluysa bind params.
+- Pydantic strict field validation; max body size, timeout, unicode sanitation.
+- Structured JSON logs; trace_id ve request_id; e-posta/token/query değerini maskeler.
+- CI'da SAST/dependency check, temel secret scan; prod imajında non-root user.
+- GitHub Actions GITHUB_TOKEN en düşük yetki; third-party actions tam SHA pin.
+- Servis yönetim endpoint'leri internetten serbest erişime açık değil.
+- Abuse için IP başına sadece statik sınır değil, proxy trusted headers kontrolü.
+- Auth kullanıcılarının kendi verileri dışında kayıt oluşturması/silmesi engellenir.
+- CORS mobil istemci güvenlik sınırı değildir; web panel gelirse origin whitelist.
+- Sırlar release dosyalarında, uygulama bundle'ında, screenshotlarda görünmez.
+
+KVKK/PRIVACY CHECKLIST:
+- Türkçe açık aydınlatma metni, veri sorumlusu ve iletişim kanalı.
+- Amaç ve hukuki dayanak; işlenen/veri işleyen taraflar; yurt dışı aktarım incelemesi.
+- STT sağlayıcısının çevrimiçi işleme yapıp yapmadığı cihaz/platforma göre açıklanır.
+- Mikrofon izni istenirken anlaşılır gerekçe; ret halinde yazı ile kullanıma devam.
+- Gerekmedikçe reklam kimliği, kişi listesi, konum veya fotoğraf izni alınmaz.
+- Ham ses, sorgu ve satış bilgileri reklam/analitik SDK'larına varsayılan aktarılmaz.
+- Saklama süreleri, erişim/silme talebi, cookie/SDK politikası somutlaştırılır.
+- Data Safety/App Privacy formları gerçek SDK davranışlarına göre doldurulur.
+- Hukuki gözden geçirme gerekirse danışman değerlendirmesi alınır; bu plan hukuk görüşü değildir.
+
+======================================================================
+13. CI/CD, GIT STRATEJİSİ VE GÜNLÜK GELİŞTİRME DİSİPLİNİ
+======================================================================
+BİRİNCİ GÜN ZORUNLU:
+- Monorepo + GitHub repo + README, .gitignore, .env.example, lockfile iskeleti.
+- Format/lint/typecheck/test komutları kurulur; ilk kırmızıdan yeşile doğrulanır.
+- GitHub Actions ci.yml push + pull_request üzerinde çalışır.
+- `main` üzerinde required checks ve merge disiplini (planın izin verdiği düzeyde).
+- Secret scanning / Dependabot / SECURITY.md; en azından temel kurulum.
+
+ÖNERİLEN BRANCH MODELİ:
+- Trunk-based: `main` her zaman yeşil; kısa ömürlü `feat/*`, `fix/*`, `docs/*`.
+- Tek geliştirici de olsa küçük PR + CI; self-review checklist ve ekran kanıtı.
+- Conventional commits: feat, fix, test, refactor, docs, chore, perf, ci.
+- Commit mesajı eylemi ve kapsamı belirtir: `feat(search): parse price ceiling in Turkish`.
+- Eski özellik kırıldıysa tamir eden PR olmadan main'e merge etme.
+- Görevler GitHub Issues: P0/P1/P2, owner, kabul kriteri, test bağlantısı.
+
+CI İŞ AKIŞI:
+Every PR/Push:
+  mobile: pnpm install --frozen-lockfile -> prettier check -> eslint -> tsc --noEmit -> unit
+  api: uv sync --frozen -> ruff check/format check -> pytest unit -> schema check
+  security: lockfile review + Python/JS dependency audit (uygun ritim)
+  contracts: OpenAPI generated client mismatch veya breaking diff kontrolü.
+  reports: test summary + coverage artifact (sadece kıyaslanabilir sürümde threshold).
+
+DB entegrasyon testleri hazır olduğunda:
+  GitHub Actions PostgreSQL service container -> alembic upgrade -> pytest integration.
+
+Native build stratejisi:
+  Her push = native iOS/Android build YOK; gereksiz kota/maliyet.
+  Widget/STT/native config değişince manual veya seçilmiş nightly/dev build.
+  Release candidate = Android + iOS EAS production candidate build + E2E + imzalama.
+
+CD:
+  Staging API: `main` sonrası testler geçince otomatik veya protected environment ile.
+  Production API: tagged release + manuel onay + rollout health checks + rollback.
+  Mobil: EAS internal build -> TestFlight/Play internal -> mağaza sürüm gönderme onaylı.
+  OTA güncellemeleri sadece platform politikasına/uyumlu runtime'a uygun JS/assets
+  değişiklikleri için; native widget, izin veya modül değişikliği yeni binary gerektirir.
+
+GITHUB ACTIONS GÜVENLİK KURALLARI:
+- Workflow actions mümkünse full commit SHA ile sabitlenir; kodu incelenmeyen action yok.
+- `permissions: contents: read` varsayılan; özel iş için sınırlı yükselt.
+- PR'da production secrets erişimi yok; `pull_request_target` kullanılacaksa ayrı inceleme.
+- EAS token ve DB parolaları encrypted secrets; loglarda maskelenir.
+- Dependabot düzenli PR; lockfile güncelleme testlenmeden merge edilmez.
+- Path-filter gereksiz işi azaltabilir; fakat required check'in 'skipped' hali
+  branch protection'ı bloke etmeyecek bir workflow tasarımı seç.
+- Concurrency/cancel-in-progress kullan; aynı branch'in eski PR işlerini iptal et.
+
+GÜNLÜK 5 SAATLİK RİTİM:
+  00:00-00:20 Issue/AC/önceki CI kontrolü.
+  00:20-03:40 en önemli P0 görevi ve testler (ara içerir).
+  03:40-04:20 yerel lint/unit/integration, bug fix.
+  04:20-04:50 commit/PR/push, CI raporu ve ekran/terminal kanıtı.
+  04:50-05:00 günlük not, risk ve ertesi gün ilk iş maddesi.
+
+GÜN SONU ÇIKTI ŞABLONU:
+  Day: NN | Issue: #... | branch: ... | commits: ...
+  Changed: ... | Tests run: ... | CI: PASS/FAIL | Device checked: ...
+  Evidence: screenshot/log/report link | Known issue: ... | Next: ...
+  'CI kırmızı ama bitti' durumu TAMAMLANDI değildir.
+
+======================================================================
+14. TEST PİRAMİDİ, GOLDEN SET, E2E VE KALİTE KAPILARI
+======================================================================
+UNIT (yüksek hacim):
+- fiyat parser, Türkçe normalizer, OR/NOT, tokenization, mapping state,
+  URL builder allowlist, domain policies, history service, auth claim verifier.
+
+PROPERTY-BASED / FUZZ (kritik modüller):
+- Rasgele Unicode girdi ve boşluklar server 500 üretmez.
+- URL builder hiçbir zaman allowlist dışı host oluşturmaz.
+- fiyat min <= max kontrolü; negatif fiyat reddi.
+- NOT şartı, uygulandığı kanıtlanmadan pozitif filtreye dönüşmez.
+
+INTEGRATION:
+- PostgreSQL migration temiz DB'de upgrade (gerekirse downgrade).
+- users/history veri izolasyonu: iki kullanıcı birbirinin verisine erişemez.
+- API 200/401/403/404/409/422/429/503 ve tek hata şeması.
+- PostgreSQL tamamen kapalıyken/erişilemezken misafir /search/parse (1-RTT ilk URL önizlemesi dahil)
+  ve /search/resolve uçlarının 0 ms DB maliyetiyle 200 OK döndüğü entegrasyon testiyle kanıtlanır.
+- Supabase Auth/magic link fake adapter; staging auth gerçek smoke test.
+- Mapping version changes mevcut geçmişte sessiz filtre kayması üretmez.
+
+CONTRACT:
+- OpenAPI server/client tipleri eşleşir.
+- Mobile fixtures ile örnek JSON schema doğrulanır; toleranslı okuyucu.
+- Response'ta status ve reason yoksa filtre 'applied' UI'sına giremez.
+
+UI TEST:
+- Ana ekran, STT lifecycle, izinler, keyboard focus, filters editing, history delete.
+- TestID erişilebilir, VoiceOver/TalkBack labels, error states.
+
+E2E (Maestro veya eşdeğeri gerçek build):
+E2E-01 Misafir -> yaz -> kriterleri düzenle -> dış link aç.
+E2E-02 Widget -> voice -> permission granted -> transcript -> review.
+E2E-03 Microphone denied -> text fallback.
+E2E-04 Offline -> retry -> back; veri kaybı yok.
+E2E-05 A/B kullanıcılar aynı geçmişi görmez.
+E2E-06 Hesap aç -> geçmişi senkronize et -> çıkış -> giriş.
+E2E-07 Hesabı sil -> sunucu geçmişi silindi.
+E2E-08 Dark mode + büyük yazı + küçük ekran.
+E2E-09 Eski mapped history -> yeni sürümde yeniden doğrulama.
+E2E-10 Link için gerçek seçili filtre testi (manuel kanıt dahil).
+
+GOLDEN PARSER SET METRİKLERİ:
+- Field precision/recall/F1; price exact; negation; OR grouping;
+  contradiction detection; false-filter-rate; unsupported honesty.
+- Test verisini tutarlı hale getir; sürüm numaralı JSONL; CI regresyon raporu.
+- Hata düzeltmek için golden set'e en az bir yeni test ekle.
+
+PERFORMANS HEDEFLERİ (başlangıç, ölçülecek):
+- Cihazda ekran açılışı <= 2.0 s (orta seviye cihaz, warm launch p95 hedef).
+- API /search/parse (NLP + ilk LinkResolution tek istekte, Zero-DB) p95 <= 350 ms
+  (ONNX INT8/FP16 hibrit: CPU çıkarım <= 50 ms) / <= 200 ms (M0 kurallar).
+- API /search/resolve (yalnız kullanıcı kriter düzenlemesi sonrası NLP'siz çözümleme, Zero-DB) p95 <= 80 ms.
+- 5xx oranı < %0.5 pilot testte; gerçek kullanıcı verisi değil hedef.
+- Crash-free sessions >= %99.5 pilot; iOS/Android ayrı ölç.
+- İlk arama tamamlanma oranı >= %80 pilot hedef; segment bazında raporla.
+- Yüzdelere ulaşılmadığında test raporuna neden ve aksiyon yaz; sahte KPI yazma.
+
+CI QUALITY GATES:
+QG-01 formatter/linter/typecheck sıfır hata.
+QG-02 parser golden kritik negatif/fiyat testleri PASS.
+QG-03 URL mapping doğrulanmamış filtreyi 'verified' döndüremez.
+QG-04 SQL owner isolation ve account deletion entegrasyon testleri PASS.
+QG-05 secret scan temiz, yüksek kritik güvenlik açığı açıklamasız yok.
+QG-06 release E2E iOS+Android + manuel widget/STT smoke PASS.
+QG-07 store privacy/data safety checklist onaylı.
+
+NLP İÇİN EK TEST KATMANI (W7-W11):
+- Data contract: anotasyon offset/labels schema, no PII/no duplicate groups.
+- ML train: deterministik seed/repro metadata, mocked smoke; no data leakage.
+- Evaluation: frozen held-out test, dev-only threshold tune, class/slice breakdown.
+- Semantic: taxonomy canonicalization topK/negative candidate ranking eval.
+- Parser AST property: NOT/OR relation ve sayı/fiyat sınırları kurallarca kilitli; ML polarity bozamaz.
+- ONNX serving: PyTorch-vs-ONNX (INT8/FP16) parity >= %99.5, checksum, lazy load/warmup,
+  120ms timeout fallback, API container'ında PyTorch import yok testi.
+- Shadow mode: no user-visible change, privacy-safe aggregate metrics.
+- Performance: rules p95 ve ML p95 ayrı, CPU/RAM/throughput gerçek ölçüm.
+- PR CI only fast golden smoke; full eval nightly/manual model workflow.
+- Training run is NOT part of every mobile push.
+- Model card/dataset card and ablation report release review input.
+
+======================================================================
+15. OBSERVABILITY, HATA YÖNETİMİ VE ÜRETİM İŞLETİMİ
+======================================================================
+Gözlemlenebilirlik amacı davranışı onarmak; gereksiz kişisel veri toplamak değil.
+- Request ID / correlation ID (mobil->API), service/version, latencies, HTTP code.
+- Structured JSON log; query text, token, tam URL, e-posta varsayılan loglanmaz.
+- Sentry: uncaught client/server exceptions, redact PII, environment tags.
+- Ölçümler: parse_success, parse_warning, mapping_partial, redirect_tap,
+  external_open_failure, widget_launch, speech_permission_denied, search_cancel.
+- Ham sorguları analitik servise göndermek yok; güvenli kategori/event bucket yeter.
+- Arama niyetlerini geliştirmek için kullanıcıdan ayrı gönüllü geri bildirim alınabilir;
+  göndermeden önce metin göster ve onay al.
+
+Alert seviyesi:
+P1: API tümüyle erişilemez, yanlış host'a redirect, veri sızıntısı şüphesi.
+P2: STT belli cihazlarda çalışmıyor, bazı kategorilerde mapping bozuldu.
+P3: görsel hizalama, küçük font, tek kategori sözlük kaçırması.
+
+RUNBOOK:
+- API 5xx artarsa son deploy/migration kontrol; health, log, rollback.
+- Mapping drift tespit -> son doğrulanmış sürüme dön, bozuk eşlemeyi disable et.
+- Android/iOS widget bozuldu -> test cihazı ve runtime/binary uyumuna bak;
+  düzeltme OTA ile yapılabilir mi yoksa yeni mağaza binary'si mi gerekir belirle.
+- İzin ve STT sorunları -> OS sürüm, servis mevcutluğu ve yönergelere göre fallback.
+- DB erişimi bozuldu -> Zero-DB Hot Path sayesinde misafir /search/parse ve /search/resolve
+  %100 kesintisiz (200 OK) çalışmaya devam eder; yalnız /me ve /history uçları kontrollü 503 döner
+  ve /health/ready içinde db_status=degraded alarmı üretilir.
+- Güvenlik olayı -> token/secret rotation, erişim kapatma, olay kaydı ve bildirim planı.
+
+SLO başlangıç hedefleri:
+- API availability aylık %99.5 (pilot), prod kapasite/hizmet anlaşmasına bağlı.
+- Tüm trend raporları küçük örneklem nedeniyle güven aralığıyla yorumlanır.
+- Hata bütçesi aşılırsa yeni özellik yerine güvenilirlik işleri.
+
+======================================================================
+16. YAYIN, MAĞAZA POLİTİKALARI VE RELEASE MÜHENDİSLİĞİ
+======================================================================
+GATE-STORE başlangıçta araştırılmalı; son haftaya bırakılmamalı.
+
+Apple App Store:
+- 4.2 minimum işlevsellik: HEH'in sadece web sayfasını açan kabuk olmaması gerekir.
+  Parser, düzenlenebilir kriterler, geçmiş, widget, sesli giriş, şeffaf mapping bağımsız
+  yarar sunar ama kabul garantisi değildir.
+- Gizlilik policy link, microphone/speech usage purpose strings, veri işleme açıklaması.
+- Hesap açılışı varsa uygulama içinden hesap silme.
+- İzin istenmeden mikrofon başlatılmaz; review hesabı veya misafir deneme yolu hazır.
+- App Store Connect görselleri, açıklama, kategori, destek linki, demo review notu.
+
+Google Play:
+- Data Safety bildirimleri SDK ve veri akışıyla uyumlu.
+- Hesap varsa app içi silme yolu + web silme talep bağlantısı.
+- Manifest izinler en az kapsam; target SDK güncel şartlar release anında doğrulanır.
+- Play Console gerektirdiği test/kimlik/politika koşulları hesabın tipine göre kontrol.
+- Internal track, closed test gerekiyorsa, sonrasında production başvurusu.
+
+SÜRÜMLEME:
+- SemVer benzeri uygulama sürümü (1.0.0) + platform build numbers artan.
+- API ve mapping sürümü ayrı tutulur; uyumluluk matrisi.
+- Development/Staging/Production ortamlarında config/secrets ayrı.
+- Backend DB migration: expand/contract; uygulama müşterileri eski sürümde olabilir.
+- Mobile release candidate tag ve changelog; test kanıtı release klasöründe.
+- Rollback: API önceki image + mapping önceki verified release;
+  store binary rollback sınırlıdır, feature flag/hotfix stratejisi gerekir.
+- Uzaktan açılan feature flag'lerin backend uyumluluğu, kill switch ve sonlanma tarihi var.
+
+YAYIN ÖNCESİ CHECKLIST (HEPSİ PASS):
+[ ] HEH ürün dili ve logo tutarlı; marka araştırması ve uygulama ad uygunluğu.
+[ ] iOS ve Android en az iki farklı cihaz/OS kombinasyonunda smoke test.
+[ ] Widget + STT + izin ret + text fallback cihazda çalışıyor.
+[ ] Trendyol'daki test edilmiş filtreleri doğru uyguluyor; şeffaflık ekranı çalışıyor.
+[ ] Girişsiz akış tam; hesap varsa silme e2e testi PASS.
+[ ] Güvenlik: auth isolation, redirect, rate limit, secret scan PASS.
+[ ] Gizlilik/şartlar, veri sorumlusu iletişimi, gerekiyorsa KVKK incelemesi tamam.
+[ ] Uygulama ikon, splash, screenshot, erişilebilirlik, mağaza metadata tamam.
+[ ] DB backup/restore, staging rollouts, API rollback denenmiş.
+[ ] Üretim error tracking PII redaction test edildi.
+[ ] Sürüm tag, signed build, dağıtım kimliği, build provenance kayıtlı.
+[ ] Destek maili, politika URL'si, arıza bildirim ve cevap prosedürü var.
+[ ] Release gününde gözlem ve hotfix adımları hazır.
+
+======================================================================
+17. RİSK REGISTER VE KARAR MEKANİZMASI
+======================================================================
+Puanlama örneği: Olasılık 1..5, Etki 1..5, Skor=Çarpım. Başlangıç hipotezleri;
+haftalık değerlendirme ile değişebilir.
+
+R-01 Trendyol URL filtreleri değişiyor / işe yaramıyor.   5x5=25 CRITICAL
+     Önlem: gün 2-5 POC; 5-8 vitrin kategoride derin doğrulama + TrendyolRouteStrategy
+     (-x- slug / sr) + uzun kuyrukta dürüst prc+q fallback; kill switch.
+R-02 App Store 'web wrapper/minimum functionality' reddi. 3x5=15 HIGH
+     Önlem: bağımsız fayda, local history, filtre review, widget, review notes.
+R-03 Çok karmaşık Türkçe olumsuzlukta yanlış filtre.    4x4=16 HIGH
+     Önlem: golden set, sayı/NOT/OR kapsamının kurallara kilitlenmesi (ML kutup değiştiremez),
+     fallback, manuel düzeltme.
+R-04 iOS/Android STT servis davranışı farklı.          4x3=12 HIGH
+     Önlem: adaptör, cihaz matrisi, yazıyla devam, timeout.
+R-05 Expo SDK 58 widget entegrasyonu cihazda uyumsuz.   3x4=12 HIGH
+     Önlem: erken POC, native fallback, sürümlü build.
+R-06 Kullanıcı hesabı/gizlilik kapsamı büyür.         4x3=12 HIGH
+     Önlem: guest-first, managed auth, release öncesi deletion.
+R-07 Tek geliştirici için 60 günün yetmemesi.           4x3=12 HIGH
+     Önlem: scope gate, P2 iptali, QA tamponu, mağaza dış süreç ayrımı.
+R-08 CI maliyeti / iOS build limitleri.                 3x2=6 MEDIUM
+     Önlem: her push hafif CI, native build seçici.
+R-09 Üçüncü taraf uygulama kullanım koşulları.         3x5=15 HIGH
+     Önlem: sadece izinli web URL, otomatik kazıma yok, hukukî inceleme.
+R-10 Marka 'HEH' tescili veya benzer adı.                3x4=12 HIGH
+     Önlem: TÜRKPATENT, mağaza/alan adı araması, ad değişimi planı.
+R-11 KVKK / STT veri transferi ve raporlama uyumsuz.     3x5=15 HIGH
+     Önlem: data inventory, vendor değerlendirmesi, privacy review.
+
+Risk eskalasyon eşiği:
+- >= 15 -> gündemin ilk maddesi; çözümsüzse yeni özellik yapılmaz.
+- 9..14 -> aynı sprintte aksiyon planı gerekir.
+- <= 8 -> düzenli takip.
+
+RİSKİ AZALTMAK İÇİN 'STOP' KURALLARI:
+- İlk hafta mağaza URL filtreleri temel faydayı sağlamıyorsa ürün yaklaşımını revize et.
+- Kullanıcı geçmişinde veya hesapta veri sızıntısı doğrulanırsa dağıtımı durdur.
+- UI doğrulanmamış filtreyi 'uygulandı' gösteriyorsa release block.
+- Store account deletion/policy testleri eksikse ilk halka açık sürümü gönderme.
+
+======================================================================
+18. 18 HAFTALIK / 90 İŞ GÜNLÜK KANIT TEMELLİ İCRA PLANI (REVİZE)
+======================================================================
+KAPASİTE: 18 hafta x 5 iş günü x 5 saat = 450 nominal saat.
+BU BİR HEDEF TAKVİMDİR; 450 saat tüm işleri bitirme garantisi değildir.
+NLP anotasyonu/ML eğitimi, iki platform native UI, mağaza politikası,
+Trendyol dış bağımlılığı ve pilot iterasyonlar 20-30% takvim tamponu isteyebilir.
+Gerekirse takvim uzatılır; kritik kalite eşiği düşürülmez, ölçülmeden başarı denmez.
+
+BAĞIMLILIK VE SIRA:
+W1-W3: Mühendislik temeli + vitrin kategori mağaza link POC + tek-istekli/Zero-DB domain/API/UI kabuğu.
+W4: Deterministik Türkçe kural motoru (M0 baseline: sayı/fiyat + AND/OR/NOT AST).
+W5: Mobil metin araması uçtan uca dikey dilimi (Text -> 1-RTT Parse+Preview -> Edit /resolve -> Trendyol).
+W6: Gerçek cihazlarda (iOS + Android) Speech-to-Text dikey dilimi ve gerçek ASR hata gözlemi.
+W7-W8: Gerçek kullanım/STT gözlemleriyle beslenen NLP ontoloji, anotasyon rehberi, veri seti ve group-split leakage denetimi.
+W9: Daraltılmış rollü ML modelleri (M1 lineer + M2 DistilBERTurk açık uçlu varlık/kategori çıkarımı).
+W10: Kural-öncelikli hibrit AST birleştirme, semantik aday, kalibrasyon, ONNX (INT8/FP16) quantization ve ablation.
+W11: PyTorch-free ONNX Runtime serving, shadow mode, rollback ve MLOps (GATE-NLP-PROD).
+W12: 5-8 vitrin kategoride derin Trendyol doğrulaması, TrendyolRouteStrategy v2 ve uzun kuyruk sertleştirme.
+W13: iOS/Android widget + deep link.
+W14: Geçmiş, opsiyonel hesap, veri silme.
+W15: Güvenlik, KVKK/gizlilik ve staging.
+W16: Performans, gözlemlenebilirlik, internal build, pre-beta.
+W17: Pilot, NLP failure triage, mağaza hazırlığı.
+W18: Release candidate, prod, store submission veya formal No-Go.
+
+Her günün 5 saatlik önerisi: 25 dk Issue/ADR okuyup hedef belirleme,
+3.5 saat odaklı implementasyon/araştırma, 55 dk test ve ölçüm,
+10 dk dokümantasyon/commit/PR/CI. Eğitim/anotasyon günlerinde dağılım değişebilir.
+Main her zaman yeşil; her gün push atılır ama bitmeyen özellik için green CI
+başarı sayılmaz. Domain, dataset veya model değişiklikleri test ve metrikle belgelenir.
+
+ÖNEMLİ: NLP R&D sırasında 'bir hafta öğrendim' çıktısı kabul edilmez.
+Her araştırma günü dosya, deney, etiketli veri, metrik veya karar üretir.
+
+------------------------ W1 / GÜN 01–05 ------------------------
+HEDEF: Risk doğrulama ve ilk günden CI/CD disiplini
+HAFTA SONU: Gate-0: Provider/deep-link kabiliyeti PASS/PARTIAL/BLOCKED
+
+D01 — Monorepo, branch kuralları ve ilk CI [TAMAMLANDI — 24.11.2026]
+  İş: pnpm/uv lock, Expo+FastAPI skeleton, strict TS, Ruff/Mypy/Pytest, ESLint/Prettier/Jest, pre-commit, CI status check; PR/Issue template, Dependabot, SECURITY.md.
+  Dosya/kanıt: .github/workflows/ci.yml; frontend/; backend/; docs/adr/0001-repo.md; pnpm-lock.yaml; backend/uv.lock.
+  Test/kabul: PASS — Kırmızıdan yeşile (red-to-green) doğrulandı; ruff/mypy/pytest (5/5) ve prettier/eslint/tsc/jest (2/2) 0 hata.
+
+D02 — Trendyol URL risk POC: vitrin kategoriler ve fiyat/path analizi
+  İş: 3-5 vitrin kategoride hem /sr?... query hem SEO slug + -x- birleşik facet path davranışının kanıtı; scraping yapmadan manuel test.
+  Dosya/kanıt: docs/quality/trendyol-matrix-v0.md; evidence/W1.
+  Test/kabul: Yeniden açılan linkte gerçekten fiyat filtresi aktif mi? -x- ve /sr farkı belgeli.
+
+D03 — Vitrin kategori marka, renk, beden ve OR risk POC
+  İş: Sony+JBL OR, siyah renk, M beden, fiyat+marka kombine; tek tek ve birlikte seçili filtre durumu.
+  Dosya/kanıt: docs/quality/trendyol-matrix-v0.md; docs/risk-register.md.
+  Test/kabul: Ekranda filtre seçilmemişse verified diye işaretlenmez; go/no-go notu.
+
+D04 — Mobil native feasibility spike
+  İş: Expo SDK uyumu, dev build, iki platform widget tap/deeplink ve ses izni smoke; eklenti güncelliği araştır.
+  Dosya/kanıt: docs/adr/0002-native-widgets.md; docs/adr/0003-speech.md.
+  Test/kabul: Gerçek cihaz/simülatör farkları, platform blocker/fallback kaydı.
+
+D05 — Gate-0 ve v1 değer önerisi kararı
+  İş: İlk hafta kanıtlarını değerlendir; ürün 'verified filters' mi 'query helper' mı; backend health + local PostgreSQL.
+  Dosya/kanıt: docs/adr/0004-provider-go-no-go.md; infrastructure/docker-compose.yml.
+  Test/kabul: Gate PASS/PARTIAL/BLOCKED; başarısız risk için kapsam revizyonu.
+
+
+------------------------ W2 / GÜN 06–10 ------------------------
+HEDEF: Monokrom UI, domain sözleşmesi, FastAPI/PostgreSQL
+HAFTA SONU: Gate: iOS+Android demo UI, API contract ve migration CI yeşil
+
+D06 — Monokrom tasarım sistemi
+  İş: heh. typography, grid/spacing, contrast, icon, dark/light, reduced motion tokens.
+  Dosya/kanıt: apps/mobile/src/theme/*; docs/design/system.md.
+  Test/kabul: Small iPhone/Android responsive, accessibility contrast baseline.
+
+D07 — Home, text ve overflow prototipi
+  İş: Mikrofon merkezli ana ekran, metin alanı, üç nokta menüsü, bottom tabs yok.
+  Dosya/kanıt: apps/mobile/src/features/search/*; app/index.tsx.
+  Test/kabul: RTL/screenshot; VoiceOver/TalkBack etiketleri.
+
+D08 — Modül sınırları ve tek-istekli domain contract
+  İş: SearchIntent v2 AST taslağı, 1-RTT /parse (+ ilk LinkResolution) ve edit-only /resolve sözleşmesi, errors, request-id, OpenAPI/TS codegen.
+  Dosya/kanıt: docs/contracts/*; domain/*; packages/api-client.
+  Test/kabul: Schema fixtures doğrulanır, mobilden backend'e adlandırma uyumu.
+
+D09 — DB/identity veri sınırları
+  İş: PostgreSQL/Alembic; profiles/preferences/history tabloları, kullanıcı izolasyon planı (hot path DB'den izole).
+  Dosya/kanıt: services/api/alembic/*; tests/integration/test_migration.py.
+  Test/kabul: Fresh DB migrate, broken migration CI red, row ownership basic test.
+
+D10 — Backend güvenilir kabuk ve Zero-DB hot path
+  İş: Settings/secrets, health (/ready içinde db_status ayrı), in-memory snapshot boot loader, structured redacted logs, OpenAPI, exception schema, feature flag.
+  Dosya/kanıt: services/api/src/heh_api/{core,api}/*.
+  Test/kabul: 200/422/500 response kontratı, DB kapalıyken /search/* 200 OK testi, secret ve raw query log sızıntısı yok.
+
+
+------------------------ W3 / GÜN 11–15 ------------------------
+HEDEF: Provider adapter skeleton, TrendyolRouteStrategy ve M0 ön koşulları
+HAFTA SONU: Gate: Tek-istekli API iskeleti, Zero-DB snapshot ve veri politikası hazır
+
+D11 — ProviderCapabilities ve Vitrin/Uzun-Kuyruk sözleşmesi
+  İş: Trendyol 'verified/query_only/unsupported/unknown' semantiği, 5-8 vitrin kategori kapsamı + uzun kuyruk prc+q politikası.
+  Dosya/kanıt: domain/verification.py; mappings/schema.json.
+  Test/kabul: Kanıt yoksa verified yapılamaz; schema validation gate.
+
+D12 — TrendyolRouteStrategy ve URLBuilder güvenlik prototipi
+  İş: VerifiedFacetPathStrategy (-x-) + CanonicalSearchQueryStrategy (/sr), host allowlist, URL encoding, open-redirect testi, parametre expiry.
+  Dosya/kanıt: infrastructure/trendyol/url_builder.py; tests/unit/test_url.py.
+  Test/kabul: Host injection ve unknown parametre/-x- segmenti red; source query text doğru.
+
+D13 — 1-RTT API mock uçtan uca iskelet
+  İş: Mobile text -> 1-RTT mock /search/parse (AST + LinkResolution) -> criteria preview -> edit /resolve -> explicit redirect.
+  Dosya/kanıt: api/v1/search.py; mobile/query-hooks.ts.
+  Test/kabul: Kullanıcı bir demo sorgusuyla tek istekte önizleme ve gerçek navigation; no fake filter badge.
+
+D14 — Taksonomi ve veri kullanım sınırları
+  İş: Category ontology'nin provider ID'den bağımsız tasarımı; PII, lisans ve veri toplama kararı.
+  Dosya/kanıt: docs/nlp/rfc.md; docs/privacy/nlp-data-policy.md.
+  Test/kabul: Hangi veri eğitim için kullanılabilir açık; gerçek ham query default storage yok.
+
+D15 — Gate pre-slice / ürün doğrulama
+  İş: 12 örnekle kullanılabilirlik testi ve link çıktı denetimi; M0 ve mobil dikey dilime giriş koşulları.
+  Dosya/kanıt: docs/quality/w3-pre-nlp.md; docs/adr/0005-nlp-roadmap.md.
+  Test/kabul: Domain AST + 1-RTT/Zero-DB kontratı + provider risk + privacy gate net; başarısız ise W4 başlamaz.
+
+
+------------------------ W4 / GÜN 16–20 ------------------------
+HEDEF: Deterministik Türkçe kural motoru (M0 baseline)
+HAFTA SONU: Gate-M0: Sayı/fiyat ve AND/OR/NOT kuralları 200 çekirdek golden testte PASS
+
+D16 — Türkçe normalizasyon
+  İş: NFC, Türkçe locale case handling İ/ı, noktalama temizleme, model-name koruma.
+  Dosya/kanıt: infrastructure/nlp/rules/normalize.py.
+  Test/kabul: 100 fixture, model-name collision ve anlam kaybı testi.
+
+D17 — Deterministik sayısal/fiyat/birim ayrıştırıcı
+  İş: TL, 3 bin, 2.500, 20-30 bin, kg, GB, Hz, ml, price upper/lower (< vs <=) semantiği.
+  Dosya/kanıt: infrastructure/nlp/rules/numbers.py.
+  Test/kabul: Critical price exact unit tests + property-based fuzz.
+
+D18 — Çekirdek sözlük, alias ve vitrin kategori yönlendirici
+  İş: Brand/product type/color/size aliases, multiword entities; 5-8 vitrin kategori router'ı.
+  Dosya/kanıt: infrastructure/nlp/rules/entities.py; data/ontology/aliases.v1.yaml.
+  Test/kabul: JBL/Apple/M beden/model numarası çapraz test.
+
+D19 — Deterministik Boolean ve NOT kapsam AST kurucusu
+  İş: NOT scope ('değil','olmasın','hariç'), AND/OR grouping ('veya','ya da'), modality, çelişki ve abstain.
+  Dosya/kanıt: infrastructure/nlp/rules/logic.py.
+  Test/kabul: Negation->positive dönüşmüyor; OR group AST property tests.
+
+D20 — M0 çekirdek 200 golden smoke ve Zero-DB /parse entegrasyonu
+  İş: 200 seed sorgu üzerinde M0 ölçümü; RuleBasedQueryUnderstandingAdapter'ın 1-RTT /search/parse ile birleştirilmesi.
+  Dosya/kanıt: tests/golden/seed.jsonl; docs/quality/m0-w4-gate.md.
+  Test/kabul: GATE-M0 kritik fiyat/negation smoke PASS; Zero-DB /parse p95 <= 200ms.
+
+
+------------------------ W5 / GÜN 21–25 ------------------------
+HEDEF: Mobil metin araması uçtan uca dikey dilimi (M0 canlı ürün)
+HAFTA SONU: Gate-VSlice-Text: Text -> 1-RTT Review -> Edit /resolve -> Trendyol iki OS'ta çalışır
+
+D21 — Tek-istekli (1-RTT) ve edit-only typed API istemcisi
+  İş: TanStack Query ile 1-RTT /search/parse (ilk URL dahil) ve yalnız chip düzenlemede /search/resolve, AbortController, request_id.
+  Dosya/kanıt: apps/mobile/src/services/api/*.
+  Test/kabul: İlk sorguda çift istek yok; iki hızlı aramada stale response son aramayı ezemez.
+
+D22 — Metin girişi ve düzeltme deneyimi
+  İş: Prompt, klavye erişilebilirliği, safe area uyumu, boş/geçersiz/çevrimdışı hata durumları.
+  Dosya/kanıt: apps/mobile/src/features/search/TextEntry.tsx.
+  Test/kabul: UI automation input/focus, accessible labels, offline metin koruma.
+
+D23 — AST grup destekli kriter düzenleyici (CriteriaReview)
+  İş: Fiyat/beden/renk/marka OR grupları ve NOT dışlamaları için monokrom chip düzenleyici ve silme sonrası /resolve tetikleme.
+  Dosya/kanıt: apps/mobile/src/features/search/CriteriaReview.tsx.
+  Test/kabul: OR/NOT grupları yanlış düzleştirilmez; chip silinince son linke geri sızmaz.
+
+D24 — Güvenli dış yönlendirme (RedirectCTA) ve kısmi arama şeffaflığı
+  İş: Applied/Query-only/Unsupported monokrom durum ayrımı, açık kullanıcı onayı, 'Kısmi aramayı aç' etiketi, çift dokunma koruması.
+  Dosya/kanıt: apps/mobile/src/features/search/RedirectCTA.tsx.
+  Test/kabul: Deep link fallback, open redirect reddi, sahte 'uygulandı' rozeti yok.
+
+D25 — Metin akışı uçtan uca dikey dilim gate
+  İş: Kullanıcı -> text -> 1-RTT parse -> review -> edit (/resolve) -> Trendyol; 20 senaryo manuel+otomatik.
+  Dosya/kanıt: apps/mobile/e2e/search-text.yaml; docs/quality/w5-vslice-text-gate.md.
+  Test/kabul: İki OS build'de E2E PASS, kritik regresyon 0.
+
+
+------------------------ W6 / GÜN 26–30 ------------------------
+HEDEF: Gerçek cihaz Speech-to-Text uçtan uca dikey dilimi + gerçek ASR gözlemi
+HAFTA SONU: Gate-VSlice-Voice: Mic -> transcript -> M0 -> review -> link PASS + gerçek ASR verisi
+
+D26 — Speech adapter API ve izin durum makinesi
+  İş: SpeechProvider interface, tek-oturum kilidi, izin isteme, app lifecycle cleanup kuralları.
+  Dosya/kanıt: apps/mobile/src/services/speech/*.
+  Test/kabul: Mock STT testleri, iptal, arka plana geçişte kaynak temizliği.
+
+D27 — iOS gerçek cihaz STT
+  İş: SFSpeechRecognizer / plugin cihaz desteği, tr-TR, izin reddi -> yazıyla devam akışı.
+  Dosya/kanıt: docs/quality/ios-speech-matrix.md.
+  Test/kabul: iOS gerçek cihazda transkript alma ve izin reddi fallback PASS.
+
+D28 — Android gerçek cihaz STT
+  İş: SpeechRecognizer plugin/sağlayıcı, cihazda konuşma servisi kontrolü, tr-TR, offline davranışı.
+  Dosya/kanıt: docs/quality/android-speech-matrix.md.
+  Test/kabul: Android gerçek cihazda happy/failure akışı; kullanıcı basmadan kayıt yok.
+
+D29 — STT transkript normalizasyonu ve gerçek ASR hata günlüğü
+  İş: Gerçek cihaz denemelerinden çıkan marka fonetiği/sayı ASR hataları (örn. 'cey bi el'->JBL), düzenlenebilir transkript.
+  Dosya/kanıt: infrastructure/nlp/rules/asr_aliases.yaml; mobile/Listening.tsx.
+  Test/kabul: Partial vs final transcript ayrımı; gözlenen gerçek ASR hata envanteri kaydedilir.
+
+D30 — Sesli arama uçtan uca dikey dilim gate
+  İş: Mic -> transcript -> 1-RTT M0 parse -> editable AST -> Trendyol linki; gizlilik/izin doğrulaması.
+  Dosya/kanıt: apps/mobile/e2e/search-voice.yaml; docs/quality/w6-vslice-voice-gate.md.
+  Test/kabul: İzin reddi/tekrar/arka plan/zayıf ağ E2E iki OS'ta PASS.
+
+
+------------------------ W7 / GÜN 31–35 ------------------------
+HEDEF: NLP görev tanımı, ontoloji ve gerçek STT destekli anotasyon rehberi
+HAFTA SONU: Gate-NLP-A: Kural vs ML görev sınırı, AST ve annotation guideline freeze
+
+D31 — NLP task specification ve kural/ML sınır tanımı
+  İş: Sayı/fiyat/boolean kapsamının kurallarda kalıp ML'in yalnız açık uçlu slot/kategori önermesi, error taxonomy.
+  Dosya/kanıt: docs/nlp/task-definition.md; docs/nlp/error-taxonomy.md.
+  Test/kabul: En az 20 olumlu/olumsuz etiketli örnek reviewer tarafından tutarlı anlaşılır.
+
+D32 — Ontology ve typed AST final
+  İş: Category hierarchy (vitrin + uzun kuyruk), size systems, units, booleans, polarity, modality, provenance.
+  Dosya/kanıt: data/ontology/*; domain/search_intent.py.
+  Test/kabul: AST round-trip ve valid/invalid schema tests; OR/NOT doğru temsil.
+
+D33 — Gerçek STT gözlemleriyle anotasyon el kitabı
+  İş: Span offsets, relations, modifiers, explicit/implicit, no assumptions, W6 gerçek ASR örnekleri dahil 30+ rehber örneği.
+  Dosya/kanıt: data/annotations/handbook.md; tests/golden/seed.jsonl.
+  Test/kabul: İlk 30 örnek yönergeye göre tutarlı yeniden etiketlenebilir.
+
+D34 — Dataset validator ve data card
+  İş: JSONL schema, span overlaps, unsafe PII, provenance, category coverage, dataset manifest.
+  Dosya/kanıt: scripts/nlp/validate_annotations.py; docs/nlp/dataset-card.md.
+  Test/kabul: Invalid spans/PII/duplicate sample yakalanır; fail-fast.
+
+D35 — NLP Gate A: annotation/ontology freeze
+  İş: Seed 250 örnek, label distribution, edge cases, annotation audit.
+  Dosya/kanıt: docs/quality/nlp-w7-gate.md.
+  Test/kabul: Schema v1 freeze, kritik belirsizlik sınırı altında; eksikler backlog.
+
+
+------------------------ W8 / GÜN 36–40 ------------------------
+HEDEF: Türkçe CQU dataset, gerçek ASR dilimi, leakage denetimi ve tam M0 benchmark
+HAFTA SONU: Gate-NLP-B: Group split, frozen test seti ve M0 tam benchmark raporu
+
+D36 — Dataset kürasyonu ve güvenli örnek üretimi
+  İş: Doğal Türkçe varyasyonlar, konuşma dili, yazım hatası, vitrin ve uzun kuyruk kategorilerinden örnekler.
+  Dosya/kanıt: data/seed/*.jsonl; data/manifests/*.
+  Test/kabul: Kopyalanmış/izinsiz user data yok; provenance her örnekte.
+
+D37 — AND/OR/NOT/Range anotasyon turu
+  İş: Polarity, brand alternatives, fiyat alt/üst sınırları, materyal dışlamaları; zorlu 100+ örnek.
+  Dosya/kanıt: data/annotations/round2.jsonl.
+  Test/kabul: Negation scope ve OR ilişkilerinde tutarsızlık listesi ve açıklama.
+
+D38 — Gerçek cihaz ASR ve belirsiz dil anotasyon turu
+  İş: W6'da telefonlardan gözlenen gerçek STT bozulmaları, '3 bin civarı', 'biraz daha', fonetik marka hataları.
+  Dosya/kanıt: data/annotations/asr.jsonl.
+  Test/kabul: Transkript ile literal user intent karıştırılmaz; ground truth ayrı.
+
+D39 — Data split ve leakage audit
+  İş: Paraphrase/template family group, train/dev/test; frozen test hashing.
+  Dosya/kanıt: scripts/nlp/split_by_group.py; data/manifests/splits-v1.json.
+  Test/kabul: Near-duplicate gruplar farklı split'te yok; test locked.
+
+D40 — NLP Gate B: dataset kalitesi ve dondurulmuş M0 tam benchmark
+  İş: 400-800+ manuel incelenmiş örnek denetimi ve dondurulmuş dev/test üzerinde M0 kurallarının eksiksiz ölçümü.
+  Dosya/kanıt: scripts/nlp/evaluate.py; docs/quality/nlp-w8-gate.md.
+  Test/kabul: Kalite düşükse labeling uzat; test setinde sentetik kopya yok; M0 referans skoru kilitlenir.
+
+
+------------------------ W9 / GÜN 41–45 ------------------------
+HEDEF: Daraltılmış rol ile gerçek model eğitimi (DistilBERTurk adayları)
+HAFTA SONU: Gate-NLP-C: Tekrarlanabilir M1 + DistilBERTurk (M2) eğitimi ve M0 kıyaslaması
+
+D41 — İzole ML training environment (API'den ayrı)
+  İş: Reproducible seed/uv lock (yalnız ml/), Torch, Transformers, Datasets, optimum/onnx export, artifact store.
+  Dosya/kanıt: ml/heh_nlp/{train.py,configs/*}; docs/adr/0006-ml-stack.md.
+  Test/kabul: Train script smoke; weights/onnx git'e eklenmez; API pyproject.toml PyTorch almaz.
+
+D42 — M1 basit öğrenen baseline
+  İş: TF-IDF char ngram + linear model category/intent/OOD, group split dev.
+  Dosya/kanıt: ml/heh_nlp/train_linear.py; docs/quality/experiment-m1.md.
+  Test/kabul: Train seed / dev F1 / overfit and memory measurements.
+
+D43 — Türkçe sondan eklemeli token-label hizalama
+  İş: BIO/BILOU alignment, subword label masking (-100), invalid span, tokenizer offsets.
+  Dosya/kanıt: ml/heh_nlp/data_collator.py; tests/ml/test_alignment.py.
+  Test/kabul: Token/char offsets Türkçe eklerde doğrulanır; padding -100 mask.
+
+D44 — M2 DistilBERTurk fine-tuning (açık uçlu slot + kategori/OOD)
+  İş: DistilBERTurk birincil üretim adayı (BERTurk yalnız çevrimdışı üst-sınır referansı), budgeted fine-tune; NOT/fiyat kurallara bırakılır.
+  Dosya/kanıt: ml/heh_nlp/configs/distilberturk.yaml; models/registry.json.
+  Test/kabul: Checkpoint hashed, dev F1, training curve, no data leakage.
+
+D45 — NLP Gate C: M0 / M1 / M2 karşılaştırma raporu
+  İş: Slot/kategori/OOD kazanımı ve ek maliyet kıyaslaması; 'ML mutlaka deploy' ön kararı yok.
+  Dosya/kanıt: ml/heh_nlp/compare.py; docs/quality/nlp-w9-gate.md.
+  Test/kabul: M2 yalnız sözlüğün kaçırdığı alanlarda M0'ı geçerse sonraki aşamaya aday olur.
+
+
+------------------------ W10 / GÜN 46–50 ------------------------
+HEDEF: Kural-öncelikli hibrit birleştirme, kalibrasyon, ONNX INT8/FP16 ve ablation
+HAFTA SONU: Gate-NLP-D: PyTorch vs ONNX eşdeğerliği, latency/RAM ve model seçim ADR'si
+
+D46 — Kural-kilitli constraint graph birleştirici (M3)
+  İş: Deterministik sayı/fiyat ve AND/OR/NOT ağacı üzerine DistilBERTurk eksik span adaylarının güvenli birleştirilmesi.
+  Dosya/kanıt: infrastructure/nlp/hybrid/constraint_builder.py.
+  Test/kabul: ML hiçbir koşulda NOT kutbunu veya fiyat sınırını değiştiremez; no injected constraint.
+
+D47 — Semantik özellik aday eşleme deneyi
+  İş: Küçük multilingual embeddings/top-k attributes; query intent vs provider capability ayrımı.
+  Dosya/kanıt: ml/heh_nlp/eval_semantic.py; data/ontology/attributes.v1.yaml.
+  Test/kabul: Recall@K, false semantic match, p95, score cutoff measured.
+
+D48 — Güven kalibrasyonu ve çekimserlik politikası
+  İş: Confidence bins, ECE/Brier, slice thresholds, manual review policy.
+  Dosya/kanıt: ml/heh_nlp/calibrate.py; docs/nlp/confidence-policy.md.
+  Test/kabul: Unsafe spans route review, no false confident % in UI.
+
+D49 — ONNX Runtime (INT8/FP16) export, parity ve tam ablation
+  İş: DistilBERTurk -> ONNX FP16/INT8 export ve quantize; PyTorch referansıyla span eşdeğerliği, CPU p95 (~30-50ms), RAM ve M0/M1/M2/M3 ablation.
+  Dosya/kanıt: ml/heh_nlp/export_onnx.py; docs/quality/nlp-ablation.md; scripts/nlp/benchmark.py.
+  Test/kabul: ONNX parity >= %99.5; p95/RAM tablosu gerçek ölçümle doldurulur, tahmin yok.
+
+D50 — NLP Gate D: model ve runtime seçim kararı
+  İş: Ölçülen kalite, ONNX CPU p95, RAM, lisans ve bakım yüküne göre M0 vs M3 (ONNX) kararı; explicit ADR.
+  Dosya/kanıt: docs/adr/0007-nlp-model-decision.md; docs/quality/nlp-w10-gate.md.
+  Test/kabul: Kanıtlı uplift + p95 bütçe uyumu yoksa rules-only devam edilir.
+
+
+------------------------ W11 / GÜN 51–55 ------------------------
+HEDEF: PyTorch-free ONNX serving, shadow mode, rollback ve MLOps
+HAFTA SONU: Gate-NLP-PROD: ONNX hibrit rollout veya kanıtlı M0 rules fallback
+
+D51 — ONNXQueryUnderstandingAdapter ve model registry
+  İş: QueryUnderstandingPort, rules/onnx/hybrid/shadow, .onnx + tokenizer SHA256 doğrulaması; API container'ında PyTorch yok.
+  Dosya/kanıt: infrastructure/nlp/adapters/*; services/model_registry.py.
+  Test/kabul: Fake model, missing artifact, corrupt hash fallback ve PyTorch-free import testi PASS.
+
+D52 — NLP API v2 provenance ve versiyon entegrasyonu
+  İş: 1-RTT /search/parse yanıtında parser_version + onnx_model_version + span provenance ve edit-only /resolve uyumu.
+  Dosya/kanıt: api/v1/search.py; schemas/search.py; packages/api-client.
+  Test/kabul: Schema compatibility, 422 errors, response provenance.
+
+D53 — Shadow mode ve sıkı timeout fallback
+  İş: Rules user-facing, ONNX server-side PII'sız karşılaştırma; 120ms internal ONNX timeout -> anında M0 fallback.
+  Dosya/kanıt: core/feature_flags.py; docs/quality/nlp-shadow.md.
+  Test/kabul: Feature flag kill switch + PII scrub + 1-RTT p95 <= 350ms verified.
+
+D54 — ML observability, rollback ve model kartları
+  İş: Artifact model card, dataset card, aggregate metrics, rollback runbook, monitoring.
+  Dosya/kanıt: docs/nlp/model-card.md; docs/runbooks/nlp-rollback.md.
+  Test/kabul: NLP_MODE=rules anında çalışır; no production training.
+
+D55 — NLP production gate
+  İş: Critical exact/numeric/negation gates, ONNX test harness, security/failover/latency.
+  Dosya/kanıt: docs/quality/nlp-prod-readiness.md.
+  Test/kabul: PASS or explicit rules-only fallback; no forced ML launch.
+
+
+------------------------ W12 / GÜN 56–60 ------------------------
+HEDEF: 5–8 vitrin kategoride derin Trendyol doğrulaması ve uzun kuyruk sertleştirme
+HAFTA SONU: Gate-Provider: Verified vs query-only ayrımı %100 doğru, Zero-DB snapshot sert
+
+D56 — Vitrin kategori verified registry ve snapshot loader
+  İş: 5-8 vitrin kategori ve parametre değerleri, kanıt tarihi/hash, expiry, disabled mappings, Zero-DB in-memory snapshot.
+  Dosya/kanıt: mappings/verified/*; verification/registry.py.
+  Test/kabul: Evidence hash required; stale status unknown, not verified; DB olmadan yüklenir.
+
+D57 — Çoklu filtre semantiği ve TrendyolRouteStrategy v2
+  İş: VerifiedFacetPathStrategy (-x- birleşik path) + CanonicalSearchQueryStrategy (/sr), AND/OR çoklu marka, NOT unsupported, uzun kuyruk prc+q.
+  Dosya/kanıt: application/build_link.py; tests/contract/test_mapping.py.
+  Test/kabul: Provider never changes AST meaning silently; uzun kuyrukta kategori facet ID uydurulmaz.
+
+D58 — External URL builder v2 güvenlik sertleştirmesi
+  İş: Host allowlist, canonical encoding, deterministic repeated parameters, deep link fallback.
+  Dosya/kanıt: infrastructure/trendyol/url_builder.py; tests/unit/test_url.py.
+  Test/kabul: URL allowlist/host/scheme/-x- injection fuzzer pass.
+
+D59 — Gerçek cihaz/web vitrin kategori matrisi yeniden testi
+  İş: 5-8 vitrin kategoride gerçek browser/app, 15+ kombine senaryo, elle seçili filtre kanıtı.
+  Dosya/kanıt: docs/quality/provider-evidence-v2.md.
+  Test/kabul: URLs only marked verified with current proof; failing mapping disabled.
+
+D60 — Provider Gate ve ürün iddia denetimi
+  İş: Applied vs query-only kapsam ölçümü; uzun kuyruk fallback kopyası ve kullanıcı şeffaflığı onayı.
+  Dosya/kanıt: docs/quality/filter-coverage.md; docs/adr/0008-provider-claims.md.
+  Test/kabul: No false 'all your filters applied' claim.
+
+
+------------------------ W13 / GÜN 61–65 ------------------------
+HEDEF: Widget/deep-link iki platform gerçek cihaz
+HAFTA SONU: Gate: Voice/text widget tap uçtan uca
+
+D61 — Widget routing contract
+  İş: Voice/text URI intents, deferred/deeplink when cold app, safe parameter validation.
+  Dosya/kanıt: apps/mobile/src/services/widgets/*; docs/contracts/widget-links.md.
+  Test/kabul: Cold/warm startup routes correct with unit/integration tests.
+
+D62 — iOS widget small+medium
+  İş: Expo widgets or SwiftUI fallback; heh. branding and two quick actions.
+  Dosya/kanıt: apps/mobile/widgets/ios/*; docs/quality/ios-widget.md.
+  Test/kabul: Real iOS add/tap, widget doesn’t record audio itself.
+
+D63 — Android widget small+medium
+  İş: Expo widgets/Glance fallback; install/update/click targets.
+  Dosya/kanıt: apps/mobile/widgets/android/*; docs/quality/android-widget.md.
+  Test/kabul: Real Android add/tap/background restart.
+
+D64 — Widget lifecycle & accessibility
+  İş: VoiceOver/TalkBack, fonts, dark/light, app upgrade, denied permission.
+  Dosya/kanıt: docs/quality/widget-matrix.md.
+  Test/kabul: No dead taps; distinct mode routes, device evidence.
+
+D65 — Widget gate and cold start metrics
+  İş: Home widget -> voice/text -> review; launch performance, crash reports.
+  Dosya/kanıt: apps/mobile/e2e/widget*.yaml; docs/quality/w13-gate.md.
+  Test/kabul: Both device signoff or explicit blocked/fallback.
+
+
+------------------------ W14 / GÜN 66–70 ------------------------
+HEDEF: Yerel geçmiş, opsiyonel hesap, senkron, silme
+HAFTA SONU: Gate: Guest çalışır; owner isolation ve deletion geçer
+
+D66 — Local history privacy-aware
+  İş: SQLite schema, migration, TTL, opt-out, clear all, replay source version.
+  Dosya/kanıt: mobile/services/storage/history.ts; tests/storage/*.
+  Test/kabul: Offline reading/replay, erase and retention tests.
+
+D67 — User navigation and settings
+  İş: 3-dot menu -> history/settings/about/privacy; language, delete, notifications not needed.
+  Dosya/kanıt: mobile/features/history/*; mobile/features/settings/*.
+  Test/kabul: No bottom nav; keyboard/voiceover, empty/error UI.
+
+D68 — Identity provider chosen
+  İş: Managed OIDC/email OTP provider ADR, JWT/JWKS validation, app deep-link callback.
+  Dosya/kanıt: docs/adr/0009-identity.md; api/core/auth.py.
+  Test/kabul: Wrong audience/issuer expired token 401; guest remains open.
+
+D69 — Optional login and profile sync
+  İş: Sign-in/out, SecureStore, protected saved_searches, user consented sync idempotency.
+  Dosya/kanıt: mobile/features/account/*; api/v1/history.py.
+  Test/kabul: Cross-account isolation and duplicate retry test.
+
+D70 — Account deletion and history export
+  İş: Account delete, provider identity delete, DB cascading & deletion request route.
+  Dosya/kanıt: api/v1/account.py; docs/runbooks/account-deletion.md.
+  Test/kabul: E2E account erase, proof of server data deletion.
+
+
+------------------------ W15 / GÜN 71–75 ------------------------
+HEDEF: Güvenlik, veri koruma, secrets, staging
+HAFTA SONU: Gate: Kritik security/privacy blocker 0
+
+D71 — Privacy engineering review
+  İş: KVKK/data mapping, STT third-party data flow, PII redaction, retention and consent.
+  Dosya/kanıt: docs/privacy/data-inventory.md; docs/privacy/notice.md.
+  Test/kabul: No unconsented training/logging; data request/delete documented.
+
+D72 — Threat model and auth review
+  İş: STRIDE, tokens, URL allowlist, rate limits, replay, IDOR, prompt-like input abuse.
+  Dosya/kanıt: docs/security/threat-model.md; tests/security/*.
+  Test/kabul: HIGH/CRITICAL blocker resolved, regression test attached.
+
+D73 — Dependency, secrets and supply chain
+  İş: Dependabot, pinned actions, SBOM, license/weights, secure CI/EAS secrets.
+  Dosya/kanıt: .github/workflows/security.yml; docs/security/dependencies.md.
+  Test/kabul: Secrets not in git/build, CI privileged actions minimized.
+
+D74 — Backend deployment to staging
+  İş: TLS, managed PostgreSQL, migrations, backups, auth config, feature flag, alerting.
+  Dosya/kanıt: infrastructure/deploy/*; docs/runbooks/staging.md.
+  Test/kabul: Recreate staging and rollback; DB restore rehearsal.
+
+D75 — Security/privacy gate
+  İş: Verify account deletion, raw transcript handling, published policies, third party SDK inventory.
+  Dosya/kanıt: docs/quality/w15-gate.md.
+  Test/kabul: No App Store/Play data misrepresentation; release stop conditions.
+
+
+------------------------ W16 / GÜN 76–80 ------------------------
+HEDEF: Performans, telemetry ve internal distribution
+HAFTA SONU: Gate: P0 E2E + NLP eval + provider smoke + internal binary
+
+D76 — Backend load and NLP load tests
+  İş: Concurrency, p95/p99, CPU/RAM per worker, model warm/cold, rule fallback.
+  Dosya/kanıt: scripts/loadtest/*; docs/quality/performance.md.
+  Test/kabul: Latency/cost budget and service limits measured.
+
+D77 — Mobile performance and resilience
+  İş: Cold/warm starts, memory, bundle, network loss, OS kill, background STT.
+  Dosya/kanıt: docs/quality/device-performance.md.
+  Test/kabul: 2 platform actual device no crashes, recovery states correct.
+
+D78 — Observability and alerting
+  İş: Sentry privacy filter, error grouping, request_id, aggregate metrics by parser/model.
+  Dosya/kanıt: telemetry/*; docs/runbooks/alerts.md.
+  Test/kabul: Realistic test exception alert, no query/token leak.
+
+D79 — EAS build automation & release candidates
+  İş: Internal signed iOS/Android binaries, staged rollout workflow, version tags.
+  Dosya/kanıt: .eas/workflows/*; eas.json; docs/release/rc0.md.
+  Test/kabul: CI stays fast, internal build installable and traceable.
+
+D80 — Pre-beta QA gate
+  İş: Full golden+E2E+manual provider matrix, privacy, widgets, release notes.
+  Dosya/kanıt: docs/quality/w16-gate.md.
+  Test/kabul: All P0 green; blocker issues list explicitly zero/No-Go.
+
+
+------------------------ W17 / GÜN 81–85 ------------------------
+HEDEF: Pilot kullanılabilirlik, düzeltme, mağaza belgeleri
+HAFTA SONU: Gate: Beta geribildirimi, readiness PASS/NO-GO
+
+D81 — Closed alpha and observed usability
+  İş: 5-10 testers, scenarios quick mont, OR brand, rejected NOT, voice, widget.
+  Dosya/kanıt: docs/quality/usability-study.md.
+  Test/kabul: Unassisted completion/time, user confusion and errors recorded.
+
+D82 — Data-driven parser failure triage
+  İş: User correction examples (consented), error taxonomy, dataset drift, add tests.
+  Dosya/kanıt: data/seed/alpha-review.jsonl; docs/quality/alpha-nlp.md.
+  Test/kabul: Reproduce failures, no personal query stored sans consent.
+
+D83 — Provider mapping change verification
+  İş: Re-test actual filters web/app, mapping expiration and fallback, monitor updates.
+  Dosya/kanıt: docs/quality/provider-evidence-pre-release.md.
+  Test/kabul: No stale verified brand/price mapping.
+
+D84 — App Store / Play compliance and metadata
+  İş: Screenshots, privacy nutrition, Android Data Safety, account delete URL, permissions.
+  Dosya/kanıt: docs/release/store-metadata.md; docs/privacy/*.
+  Test/kabul: Actual SDK/data map matches store disclosures; legal copy reviewed.
+
+D85 — Beta release readiness
+  İş: RC1 E2E, NLP gates, crashes, security evidence, rollback rehearsal, release decision.
+  Dosya/kanıt: docs/release/release-readiness.md.
+  Test/kabul: Formal PASS/PARTIAL/NO-GO; no unchecked risk hidden.
+
+
+------------------------ W18 / GÜN 86–90 ------------------------
+HEDEF: Release freeze, production ve mağaza başvurusu
+HAFTA SONU: Gate: Submitted veya gerekçeli No-Go; Published yalnız onay ile
+
+D86 — Source/lockfile freeze
+  İş: Main release tag, source reproducibility, migrations, API backwards compatibility.
+  Dosya/kanıt: CHANGELOG.md; docs/release/rc1.md.
+  Test/kabul: Clean checkout build, test, history migration pass.
+
+D87 — Final real-device signoff
+  İş: iOS+Android speech, widget, STT editing, account deletion, accessibility, offline.
+  Dosya/kanıt: docs/quality/final-device-matrix.md.
+  Test/kabul: Critical failure zero; screenshots/video evidence.
+
+D88 — Production API deploy and rollback drill
+  İş: TLS/config, managed DB backup, monitoring, parser model feature flag, rollback.
+  Dosya/kanıt: docs/runbooks/prod-deployment.md; docs/release/deploy-evidence.md.
+  Test/kabul: Can revert model to rules without store update; restore drill.
+
+D89 — Store submission package
+  İş: App Store Connect / Google Play Console binaries, notes, policies, screenshots, support.
+  Dosya/kanıt: docs/release/submission.md.
+  Test/kabul: No missing form; publisher account and permissions verified.
+
+D90 — Submission or formal No-Go
+  İş: Store submission when every gate passes, otherwise blocked report+next sprint; support triage.
+  Dosya/kanıt: docs/release/release-report.md; docs/runbooks/incident.md.
+  Test/kabul: Submitted is not Published; store approval external; next iteration backlog.
+
+
+NLP KAPILARI İÇİN DİKKAT:
+- Her hafta 'PASS/PARTIAL/BLOCKED' sonucu yaz; model eğitim süresinin bilinmezliği
+  nedeniyle eksik testleri 'TODO ama tamamlandı' diye gizleme.
+- 5 saat/gün kapasite altında labeler/model selection planı saparsa gerekli
+  buffer haftalarını ekle ve issue tracking ile şeffaflaştır.
+- Yeni model seçilse de RTM (requirements-to-test traceability matrix)
+  kontrol et: requirement -> annotation -> fixture -> metric -> CI -> release gate.
+- Fiyat/negatiflik için düşük false-positive toleransı UI kontrollü onay ile
+  tamamlanır; hiçbir otomatik yönlendirme kullanıcı onayını atlamaz.
+- Model weights/sözcük sözlüğü güncellemesi provider mapping verified durumunu
+  otomatik yükseltemez.
+
+======================================================================
+19. KABUL TESTLERİ — SENIOR REVIEW İÇİN SOMUT SENARYOLAR
+======================================================================
+AT-01 '3000 TL altı siyah mont' -> category/mont, price max 3000, color siyah.
+AT-02 'Sony veya JBL, 2500-6000' -> brand OR, fiyat aralığı; marka filtreleri
+      doğrulanmamışsa UI'da 'uygulandı' yazmayacak.
+AT-03 'Nike olmasın, Adidas olabilir' -> NOT Nike + pozitif/opsiyonel Adidas.
+AT-04 '1500'den aşağı olmasın 3000'i geçmesin' -> [1500,3000].
+AT-05 '20-30 bin arası laptop' -> [20000,30000], CPU/RAM sayıları fiyat değil.
+AT-06 'M beden 40 saat pil' -> moda/elektronik bağlamı; M yanlış kategoride invalid.
+AT-07 'siyah istemiyorum' -> siyah pozitif filtre uygulanamaz.
+AT-08 kullanıcı fiyatı 3000 -> 2500 değiştirir, son link 3000 kriterini taşımaz.
+AT-09 kategori filtre anahtarı UNKNOWN -> filter olarak apply edilmez.
+AT-10 kullanıcı geçmişi kapalı -> hiçbir yeni kayıt yerelde kalıcı yazılmaz.
+AT-11 misafir kullanıcı token olmadan tek istekte (1-RTT) /search/parse ile hem AST hem ilk
+      LinkResolution alır; PostgreSQL tamamen kapalıyken dahi /search/parse ve /search/resolve 200 OK döner.
+AT-12 A kullanıcısı B geçmişine ulaşamaz, IDOR testi geçer.
+AT-13 hesap silme sonrası auth hesabı ve HEH geçmişi silinir ya da durum açıkça pending.
+AT-14 mikrofon reddi -> metin araması çalışmaya devam eder.
+AT-15 iOS widget tap -> foreground voice start route ve permission gate.
+AT-16 Android widget tap -> text route ve klavye moduna geçiş.
+AT-17 iOS/Android Trendyol açılışında allowlisted host dışında link çıkmaz.
+AT-18 CTA butonuna çift dokunma iki çakışan redirect intent üretmez.
+AT-19 uygulama arka plana geçince STT oturumu kapanır.
+AT-20 release APK/IPA staging backend'e yanlışlıkla bağlı değildir.
+AT-21 Analytics/crash raporunda ham sorgu, email ve JWT görünmez.
+AT-22 Sürüm değişiminde artık geçersiz mapping disable edilir ve yanlış yönlendirme yok.
+AT-23 Offline hata anlaşılır, arama metni korunur, geçmiş görüntülenebilir.
+AT-24 Uygulama kaldırılıp tekrar kurulunca widget ve oturum davranışı tutarlı.
+AT-25 Account deletion web yolu ve in-app erişim store checklist'e uygun.
+AT-26 Vitrin kategori dışı (uzun kuyruk) sorguda doğrulanmamış kategori-özel facet ID veya -x-
+      segmenti üretilmez; doğrulanmış fiyat (FILTER_VERIFIED) + arama metni (QUERY_ONLY) şeffaf ayrılır.
+
+NLP SENIOR ACCEPTANCE (EK AT-NLP):
+AT-NLP-01: 'Sony veya JBL, Nike olmasın' -> (Sony OR JBL) AND NOT Nike; yanlış AND yok.
+AT-NLP-02: '3 bin civarı' -> approximate; kesin upper/lower otomatik atanmaz.
+AT-NLP-03: '3 binden az' ve '3 bini geçmesin' operator doğru (< vs <=).
+AT-NLP-04: '20–30 bin' -> 20000..30000 TRY; '16 GB RAM' fiyat değil.
+AT-NLP-05: 'M beden siyah mont' -> M clothing size; 'M2 laptop' beden değil.
+AT-NLP-06: 'Su geçirmez değil, suya dayanıklı' -> iki ayrı semantik alan karıştırılmaz.
+AT-NLP-07: Group-split leakage audit test başarısızsa model training gate BLOCKED.
+AT-NLP-08: Fine-tuned model M0 baseline'la frozen dev/test metrikleriyle kıyaslanır.
+AT-NLP-09: Low confidence -> review, asla verified filter değil.
+AT-NLP-10: Model artifact yoksa rules fallback; uygulama 500 üretmez.
+AT-NLP-11: Gerçek kullanıcı verisi anonim denilerek otomatik dataset'e yazılmaz.
+AT-NLP-12: Provider URL semantiği NLP AST'yi kayıpsız uygulanamıyorsa Unsupported.
+AT-NLP-13: Uydurulan fiyat/negatif koşul -> P0; prod için model disabled.
+AT-NLP-14: STT final transcript, edit ve parser çıktısı için iki OS E2E.
+AT-NLP-15: NLP_MODE='rules' rollback mobil güncelleme beklemeden çalışır.
+AT-NLP-16: Model değişince model SHA, data hash, ontology, parser sürümleri izlenebilir.
+AT-NLP-17: Hibrit modda ML modeli yalnız açık uçlu span/kategori önerir; fiyat sınırları ve
+           'veya / değil / olmasın / hariç' kapsam ağacı deterministik kurallarca kilitlenir (ML NOT kutbunu değiştiremez).
+AT-NLP-18: Üretim API imajı PyTorch içermez; ONNX Runtime (INT8/FP16) modeli PyTorch referansıyla
+           test setinde >= %99.5 span uyumu sağlar ve tek sorguda CPU p95 çıkarımı <= 50 ms altında kalır.
+
+======================================================================
+20. DÖKÜMANTASYON, ADR ÖRNEKLERİ VE KOD İNCELEME İLKELERİ
+======================================================================
+ZORUNLU ADR'LER:
+0001 Monorepo ve pnpm+uv seçim gerekçesi.
+0002 Expo SDK 58 widget yaklaşımı; native fallback şartları.
+0003 SpeechRecognizer adapter ve izin modelinin seçimi.
+0004 Trendyol 5-8 vitrin kategori derin doğrulama, TrendyolRouteStrategy (-x-/sr) ve uzun kuyruk prc+q kararı.
+0005 NLP hazırlık ve erken mobil dikey dilim sınırları; AST ve data governance kararı.
+0006 Daraltılmış rollü DistilBERTurk adayları, izole PyTorch training vs ONNX (INT8/FP16) runtime standardı.
+0007 NLP model seçimi: rules vs ML vs hybrid, ablation ve eval.
+0008 Versioned Trendyol mapping evidence ve ürün vaatleri.
+0009 Yönetilen email OTP/OIDC seçimi, history ve account lifecycle.
+0010 Zero-DB hot path, Staging/Production sağlayıcı, DB backup/DR ve ONNX CPU model-serving operasyonu.
+0011 Gizlilik/analytics, sorgu retention, eğitim verisi ve PII redaction.
+0012 Provider filtre kanıtlarının expiration/rollback stratejisi.
+0013 ML deployment/serving, shadow traffic, 120ms timeout, kill-switch ve rollback.
+0014 Parser'ın server-side olması, 1-RTT /search/parse + edit-only /search/resolve kontrat gerekçesi.
+
+ADR ŞABLONU:
+- Başlık / Tarih / Durum (Proposed, Accepted, Superseded)
+- Bağlam ve gerçek problemler
+- Kısıtlar ve alternatifler
+- Karar + gerekçe
+- Olumlu/olumsuz sonuçlar
+- Ölçülecek risk/kanıt, rollback
+- İlgili Issue/PR/test/operasyon belgesi
+
+PR REVIEW CHECKLIST:
+[ ] Problem ve kullanıcı değeri açıklanıyor mu?
+[ ] P0/P1/P2 kapsamına uygun mu?
+[ ] Doğrulama kodu/testi var mı?
+[ ] OpenAPI değiştiyse client güncellendi mi?
+[ ] Gizlilik/izin/PII açısından risk tarandı mı?
+[ ] Filtre VERIFIED iddiası için gerçek kanıt var mı?
+[ ] Migration geri dönüşü/uyumu düşünüldü mü?
+[ ] Ekranlarda boş/hata/yükleniyor/erişilebilirlik durumları var mı?
+[ ] EAS native config değişikliğinde yeni binary gereği not edildi mi?
+[ ] CI yeşil mi ve canlı cihaz ihtiyacı belirtildi mi?
+[ ] README/ADR/runbook'ta davranış değişikliğine ilişkin doküman güncellendi mi?
+
+README MİNİMUM:
+- Ürün vizyonu, demo görüntüleri (lisanslı kendi üretimimiz).
+- Platform desteği ve geliştirme ön koşulları.
+- Local bootstrap, .env.example, docker compose ve migrate komutları.
+- pnpm/uv lint-test-build komutları.
+- API örneği ve OpenAPI referansı.
+- Widget/STT development build kurulum ve izin yönergeleri.
+- Golden dataset/eval metodolojisi ve gerçek ölçüm sonuçları.
+- Trendyol entegrasyon sınırları; resmî bağımsız uygulama olmadığı beyanı.
+- Güvenlik, veri silme, katkı ve release prosedürü.
+
+======================================================================
+21. KARAR VERİLMİŞ / BELİRSİZ / KAPSAM DIŞI AYRIMI
+======================================================================
+KESİN:
+- HEH: minimalist siyah-beyaz, voice/text merkezli, 3 nokta menü.
+- iOS + Android / React Native + TypeScript / FastAPI + PostgreSQL.
+- Günde 5 saat / tek geliştirici / Github'a günlük push.
+- CI ilk gün, native build aşamalı.
+- Guest-first, opsiyonel account, local history.
+- Türkçe NLP: rules baseline + ölçüme göre eğitilmiş/hybrid model; filtre güvenilirliği ayrı kanıt.
+- Affiliate V1 kapsam dışı.
+
+BAŞLAMADAN/İLK HAFTA KANIT GEREKTİREN:
+- Trendyol URL'de seçili kriterlerin gerçek davranışı.
+- Expo SDK 58 widget + STT'nin hedef telefonlarda sorunsuz çalışması.
+- Hedef cihazların iOS/Android sürüm matrisi; erişilebilen gerçek test cihazları.
+- HEH adı ve logonun marka/alan adı/mağaza uygunluğu.
+- Kullanıcı giriş sağlayıcısı ve sunucu hosting planının fiyat/bölge/gizlilik incelemesi.
+
+GEREKSİZ / V1 DIŞI:
+- Ürün kataloğu, web scraping, üçüncü taraf arayüze otomatik tıklama.
+- Affiliate/komisyon API'si, Premium, fiyat alarmı, dinamik fiyat/ürün önerisi.
+- LLM/chatbot, ürün kataloğu embedding/RAG ve gelişmiş semantik ürün tavsiyesi.
+- Yalnız NLP taxonomy attribute-candidate semantic matching W10'da araştırma kapsamındadır.
+- Microservices, Rust performans optimizasyonu, Redis/Celery'yi işlevsiz yere kurma.
+- 1000 özellikli ayarlar, bottom tab, reklam/öneri feed'i.
+
+REVİZE NLP KAPSAM AYRIMI:
+P0: Türkçe slot & ilişki çözümleme, sayısal doğruluk, kullanıcı edit'i,
+    model/kurallar fallback, test seti, veri provenance, şeffaf provider mapping.
+P1: Gerçek model eğitimi ve ablation (portföy / NLP kalite), shadow rollout,
+    ayrı confidence calibration ve OOD tests; ilerlemeye bağlı yayın kararı.
+P2: Kişiselleştirilmiş sürekli öğrenme, kullanıcı verisinden retrain,
+    yorum analizi, multimodal/vision, RAG ve ürün metni tarama YOK.
+- M0 + mobil Text/STT dikey dilimi W4-W6; veri/ontology/etiketleme W7-W8; model eğitimi W9;
+  ONNX ablation W10; W1'de gereksiz GPU yok.
+- ML'yi eğitmek proje gereksinimi, ML'yi her koşulda production'a almak DEĞİL.
+
+======================================================================
+22. NİHAİ MÜHENDİSLİK ÖZETİ / PROJE ANAYASASI
+======================================================================
+1. Önce en riskli varsayımı kanıtla, sonra ekranları bitir.
+2. Her gün küçük değişiklik, tek hedef, test, commit, PR, yeşil CI.
+3. Gerçek kullanıcıya 'uygulanan filtre' ile 'yazı içinde aranmış kelimeyi' karıştırma.
+4. Her kritik dış entegrasyon adapter arkasında; fail safely ve sürümle.
+5. Backend/domain tek mantık kaynağı; mobil UI iş mantığını kopyalamaz.
+6. Guest arama şart; hesap oluşturma sadece anlamlı ek değer için.
+7. Sesli arama kullanıcının açık eylemiyle başlar; verileri en az düzeyde işle.
+8. Unit + golden + integration + gerçek cihaz + manuel filtre doğrulaması birlikte gerekir.
+9. 'Production-ready' iddiası yalnız kanıtlı QA, güvenlik ve operasyonla yapılır.
+10. Otomatik publish değil, kontrollü release ve geri alma prosedürü.
+11. 90. gün hedef; koşullara göre kapsam düşür, kaliteyi düşürme.
+12. Bu plan yaşayan dokümandır; her mimari değişikliği ADR ve risk kaydına bağla.
+
+======================================================================
+EK A. DIŞ KAYNAKLAR VE BİLİNÇLİ BELİRSİZLİKLER (24.11.2026)
+======================================================================
+- Expo SDK 58 docs: https://docs.expo.dev/versions/v58.0.0/
+- Expo widget docs: https://docs.expo.dev/versions/v58.0.0/sdk/widgets/
+- Hugging Face token classification: https://huggingface.co/docs/transformers/en/tasks/token_classification
+- BERTurk: https://huggingface.co/dbmdz/bert-base-turkish-cased
+- DistilBERTurk: https://huggingface.co/dbmdz/distilbert-base-turkish-cased
+- Sentence Transformers semantic search: https://www.sbert.net/examples/sentence_transformer/applications/semantic-search/README.html
+- App Store Review Guidelines: https://developer.apple.com/app-store/review/guidelines/
+- Google Play policy center: https://support.google.com/googleplay/android-developer/
+- Trendyol official seller docs (NOT consumer-search API): https://developers.trendyol.com/
+- Kütüphaneler, model lisansı, hosting ve SDK pin'i kurulum tarihinde yeniden doğrulanır.
+- Fiili Trendyol filtre desteği yalnız gerçek web/uygulama testleriyle kanıtlanır.
+- Anotasyon sayıları, metrik eşikleri ve gün planı HEDEF; gerçekleşmiş sonuç DEĞİL.
+- Model tercihi ve üretim dağıtımı ölçülen kalite/latency/maliyet ile belirlenir.
+- 'Mükemmel NLP' ölçülmeyen bir vaat değil; test, açıklanabilirlik, abstention,
+  kullanıcı doğrulaması ve düzenli regressions ile sürekli geliştirilen sistemdir.
+
+DOSYA DEĞİŞİKLİK KAYDI:
+- v1.0 (23.11.2026): 60 günlük temel mühendislik planı; rules-only NLP.
+- v2.0 (24.11.2026): 90 gün / 18 hafta; W4-W9 Türkçe NLP araştırma/geliştirme,
+  AST/ontology, annotasyon, leakage denetimi, BERTurk fine-tuning, semantic,
+  hybrid architecture, model-serving, MLOps, calibration, ablation, risk gates.
+- v2.1 (24.11.2026): 5 mimari ve icra iyileştirmesi işlendi — (1) W4-W6'da M0 + mobil
+  Text/STT uçtan uca dikey dilimin öne çekilmesi ve W7-W11 NLP/ML fazının gerçek veri
+  üzerine kurulması, (2) /search/parse içinde ilk LinkResolution önizlemesiyle tek ağ
+  isteği (1-RTT) ve yalnız düzenlemede /search/resolve, (3) çekirdek aramada %100 Zero-DB
+  in-memory snapshot hot path, (4) Trendyol için 5-8 vitrin kategoride derin doğrulama +
+  TrendyolRouteStrategy (-x- slug/sr) + uzun kuyrukta dürüst prc+q fallback, (5) sayı/mantık
+  (OR/NOT) ağacının kurallara kilitlenip DistilBERTurk rolünün daraltılması ve PyTorch-free
+  ONNX Runtime (INT8/FP16) sunumu.
+
+--- BELGE SONU (HEH MASTER ENGINEERING PLAN v2.1) ---
