@@ -14,7 +14,48 @@ const config: ExpoConfig = {
   android: {
     package: "com.heh.app",
   },
-  plugins: ["expo-router"],
+  plugins: [
+    "expo-router",
+    [
+      "expo-speech-recognition",
+      {
+        microphonePermission:
+          "heh. sesli ürün araması yapabilmen için mikrofonuna yalnızca sen başlattığında erişir.",
+        speechRecognitionPermission:
+          "heh. söylediğin ürün kriterlerini Türkçe metne dönüştürmek için konuşma tanımayı kullanır.",
+        androidSpeechServicePackages: [
+          "com.google.android.googlequicksearchbox",
+          "com.google.android.as",
+        ],
+      },
+    ],
+    [
+      "expo-widgets",
+      {
+        enableAndroid: true,
+        bundleIdentifier: "com.heh.app.widgets",
+        groupIdentifier: "group.com.heh.app",
+        widgets: [
+          {
+            name: "HehQuickSearch",
+            displayName: "heh. Hızlı Arama",
+            description: "Ana ekrandan sesli veya yazılı ürün aramasını tek dokunuşla başlat.",
+            ios: {
+              supportedFamilies: ["systemSmall", "systemMedium"],
+              contentMarginsDisabled: true,
+            },
+            android: {
+              minWidth: 110,
+              minHeight: 110,
+              targetCellWidth: 2,
+              targetCellHeight: 2,
+              resizeMode: "both",
+            },
+          },
+        ],
+      },
+    ],
+  ],
 };
 
 export default config;

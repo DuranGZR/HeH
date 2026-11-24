@@ -8,7 +8,8 @@
 
 - `frontend/`: React Native (`0.88`) + Expo SDK `58` + strict TypeScript mobil istemci
 - `backend/`: Python (`>=3.12`) + `uv` + FastAPI + Pydantic v2 API ve çekirdek domain/NLP katmanı
-- `.github/`: Zorunlu CI (`ci.yml`), Dependabot ve PR/Issue şablonları
+- `infrastructure/`: Yerel geliştirme için PostgreSQL 17 Docker Compose (`docker-compose.yml`)
+- `.github/`: Zorunlu CI (`ci.yml`) ve PR/Issue şablonları
 
 ## Modül Sınırları
 
@@ -18,7 +19,15 @@
 
 ## Hızlı Kurulum ve Kalite Kapıları
 
-Ön koşullar: Node.js `22.x`, `pnpm 12.x`, `uv`, Python `3.12+`.
+Ön koşullar: Node.js `22.x`, `pnpm 12.x`, `uv`, Python `3.12+` (opsiyonel yerel DB için Docker).
+
+### Yerel PostgreSQL 17 (Opsiyonel)
+
+```bash
+docker compose -f infrastructure/docker-compose.yml up -d
+# Host üzerinde 5432 doluysa:
+HEH_POSTGRES_PORT=5433 docker compose -f infrastructure/docker-compose.yml up -d
+```
 
 ### Backend (`backend/`)
 
