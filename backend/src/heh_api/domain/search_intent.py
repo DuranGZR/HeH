@@ -8,6 +8,12 @@ from typing import Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from heh_api.domain.taxonomy import (
+    ONTOLOGY_SCHEMA_VERSION,
+    IntentType,
+    ModalityKind,
+    PolarityKind,
+)
 from heh_api.domain.verification import (
     RouteStrategyKind,
     VerificationStatus,
@@ -98,9 +104,30 @@ class SearchCriterionNode(BaseModel):
     value: str | tuple[str, ...] | PriceValue
     display_label: str = Field(min_length=1, max_length=120)
     required: bool = True
+    polarity: PolarityKind = "positive"
+    modality: ModalityKind = "must"
+    explicit: bool = True
     provenance: CriterionProvenance = "rule"
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
     source_span: str | None = Field(default=None, max_length=160)
+    span_start: int | None = Field(default=None, ge=0)
+    span_end: int | None = Field(default=None, ge=0)
+    unit: str | None = Field(default=None, max_length=32)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _infer_negative_polarity_defaults(cls, raw_data: object) -> object:
+        """Default omitted polarity/modality cleanly for `not_in` while catching contradictions."""
+        if not isinstance(raw_data, dict):
+            return raw_data
+        if raw_data.get("operator") == "not_in":
+            updated = dict(raw_data)
+            if "polarity" not in updated or updated["polarity"] is None:
+                updated["polarity"] = "negative"
+            if "modality" not in updated or updated["modality"] is None:
+                updated["modality"] = "must_not"
+            return updated
+        return raw_data
 
     @model_validator(mode="after")
     def _validate_field_value_types(self) -> "SearchCriterionNode":
@@ -111,6 +138,23 @@ class SearchCriterionNode(BaseModel):
             raise ValueError("PriceValue is only valid for field='price'")
         if isinstance(self.value, tuple) and len(self.value) > MAX_CRITERION_VALUE_ITEMS:
             raise ValueError(f"criterion tuple cannot exceed {MAX_CRITERION_VALUE_ITEMS} items")
+
+        if self.operator == "not_in":
+            if self.polarity != "negative" or self.modality != "must_not":
+                raise ValueError(
+                    "not_in criteria must have polarity='negative' and modality='must_not'"
+                )
+        elif self.polarity == "negative" or self.modality == "must_not":
+            raise ValueError("Only not_in criteria may use negative polarity or must_not modality")
+
+        if (self.span_start is None) != (self.span_end is None):
+            raise ValueError("span_start and span_end must both be set or both None")
+        if (
+            self.span_start is not None
+            and self.span_end is not None
+            and self.span_end <= self.span_start
+        ):
+            raise ValueError("span_end must be strictly greater than span_start")
         return self
 
 
@@ -129,6 +173,8 @@ class SearchIntentV2(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     schema_version: Literal["2.0.0"] = CANONICAL_INTENT_SCHEMA_VERSION
+    ontology_version: str = Field(default=ONTOLOGY_SCHEMA_VERSION, min_length=1, max_length=32)
+    intent_type: IntentType = "product_search"
     raw_query: str = Field(min_length=1, max_length=MAX_QUERY_LENGTH)
     normalized_query: str = Field(min_length=1, max_length=MAX_QUERY_LENGTH)
     locale: Literal["tr-TR"] = "tr-TR"
@@ -151,17 +197,36 @@ class SearchIntentV2(BaseModel):
 
     @model_validator(mode="after")
     def _validate_ast_integrity(self) -> "SearchIntentV2":
-        seen_ids: set[str] = set()
+        max_span_bound = max(len(self.raw_query), len(self.normalized_query))
+        nodes_by_id: dict[str, SearchCriterionNode] = {}
         for criterion in self.criteria:
-            if criterion.id in seen_ids:
+            if criterion.id in nodes_by_id:
                 raise ValueError(f"Duplicate criterion id in SearchIntentV2: {criterion.id}")
-            seen_ids.add(criterion.id)
+            if criterion.span_end is not None and criterion.span_end > max_span_bound:
+                raise ValueError(
+                    f"Criterion '{criterion.id}' span_end ({criterion.span_end}) "
+                    "exceeds query length"
+                )
+            nodes_by_id[criterion.id] = criterion
 
         for group in self.logic_groups:
             for criterion_id in group.criterion_ids:
-                if criterion_id not in seen_ids:
+                node = nodes_by_id.get(criterion_id)
+                if node is None:
                     raise ValueError(
                         f"ConstraintGroup references unknown criterion id: {criterion_id}"
+                    )
+                if group.operator == "not" and (
+                    node.operator != "not_in" or node.polarity != "negative"
+                ):
+                    raise ValueError(
+                        f"NOT group cannot reference positive criterion '{criterion_id}'"
+                    )
+                if group.operator == "all_of" and (
+                    node.operator == "not_in" or node.polarity == "negative"
+                ):
+                    raise ValueError(
+                        f"all_of group cannot reference negative criterion '{criterion_id}'"
                     )
         return self
 

@@ -1,0 +1,300 @@
+version: "1.0.0"
+
+showcase_categories:
+  - ontology_id: apparel.outerwear.mens_coat
+    canonical_key: erkek_mont
+    domain: apparel
+    parent_id: apparel.outerwear
+    display_name_tr: Erkek Mont
+    showcase: true
+    size_system: clothing
+    applicable_slots: [brand, color, size, gender, price, material, attribute]
+
+  - ontology_id: electronics.audio.bluetooth_headphones
+    canonical_key: bluetooth_kulaklik
+    domain: electronics
+    parent_id: electronics.audio
+    display_name_tr: Bluetooth Kulaklık
+    showcase: true
+    size_system: none
+    applicable_slots: [brand, color, price, model, attribute]
+
+  - ontology_id: footwear.athletic.sneakers
+    canonical_key: spor_ayakkabi
+    domain: footwear
+    parent_id: footwear.athletic
+    display_name_tr: Spor Ayakkabı
+    showcase: true
+    size_system: footwear
+    applicable_slots: [brand, color, size, gender, price, attribute]
+
+  - ontology_id: electronics.computing.laptop
+    canonical_key: laptop
+    domain: electronics
+    parent_id: electronics.computing
+    display_name_tr: Laptop
+    showcase: true
+    size_system: none
+    applicable_slots: [brand, color, price, model, attribute]
+
+  - ontology_id: electronics.mobile.smartphone
+    canonical_key: cep_telefonu
+    domain: electronics
+    parent_id: electronics.mobile
+    display_name_tr: Cep Telefonu
+    showcase: true
+    size_system: none
+    applicable_slots: [brand, color, price, model, attribute]
+
+long_tail_categories:
+  - ontology_id: home.furniture.gaming_chair
+    canonical_key: oyuncu_koltugu
+    domain: home
+    parent_id: home.furniture
+    display_name_tr: Oyuncu Koltuğu
+    showcase: false
+    size_system: none
+    applicable_slots: [brand, color, price, material, attribute]
+
+  - ontology_id: home.kitchen.thermos
+    canonical_key: termos
+    domain: home
+    parent_id: home.kitchen
+    display_name_tr: Termos
+    showcase: false
+    size_system: volume_capacity
+    applicable_slots: [brand, color, price, material, attribute]
+
+  - ontology_id: home.kitchen.coffee_maker
+    canonical_key: kahve_makinesi
+    domain: home
+    parent_id: home.kitchen
+    display_name_tr: Kahve Makinesi
+    showcase: false
+    size_system: volume_capacity
+    applicable_slots: [brand, color, price, model, attribute]
+
+  - ontology_id: electronics.wearables.smartwatch
+    canonical_key: akilli_saat
+    domain: electronics
+    parent_id: electronics.wearables
+    display_name_tr: Akıllı Saat
+    showcase: false
+    size_system: none
+    applicable_slots: [brand, color, price, model, attribute]
+
+  - ontology_id: apparel.outerwear.womens_coat
+    canonical_key: kadin_mont
+    domain: apparel
+    parent_id: apparel.outerwear
+    display_name_tr: Kadın Mont
+    showcase: false
+    size_system: clothing
+    applicable_slots: [brand, color, size, gender, price, material, attribute]
+
+  - ontology_id: apparel.outerwear.kids_coat
+    canonical_key: cocuk_mont
+    domain: apparel
+    parent_id: apparel.outerwear
+    display_name_tr: Çocuk Mont
+    showcase: false
+    size_system: eu_kids_age
+    applicable_slots: [brand, color, size, gender, price, material, attribute]
+
+  - ontology_id: apparel.activewear.tshirt
+    canonical_key: kosu_tisortu
+    domain: apparel
+    parent_id: apparel.activewear
+    display_name_tr: Koşu Tişörtü
+    showcase: false
+    size_system: clothing
+    applicable_slots: [brand, color, size, gender, price, material, attribute]
+
+  - ontology_id: apparel.bags.backpack
+    canonical_key: sirt_cantasi
+    domain: apparel
+    parent_id: apparel.bags
+    display_name_tr: Sırt Çantası
+    showcase: false
+    size_system: volume_capacity
+    applicable_slots: [brand, color, price, gender, material, attribute]
+
+  - ontology_id: footwear.outdoor.boots
+    canonical_key: outdoor_bot
+    domain: footwear
+    parent_id: footwear.outdoor
+    display_name_tr: Outdoor Bot
+    showcase: false
+    size_system: footwear
+    applicable_slots: [brand, color, size, gender, price, material, attribute]
+
+  - ontology_id: electronics.computing.tablet
+    canonical_key: tablet
+    domain: electronics
+    parent_id: electronics.computing
+    display_name_tr: Tablet
+    showcase: false
+    size_system: none
+    applicable_slots: [brand, color, price, model, attribute]
+
+  - ontology_id: electronics.computing.monitor
+    canonical_key: monitor
+    domain: electronics
+    parent_id: electronics.computing
+    display_name_tr: Monitör
+    showcase: false
+    size_system: none
+    applicable_slots: [brand, color, price, model, attribute]
+
+  - ontology_id: electronics.peripherals.mechanical_keyboard
+    canonical_key: mekanik_klavye
+    domain: electronics
+    parent_id: electronics.peripherals
+    display_name_tr: Mekanik Klavye
+    showcase: false
+    size_system: none
+    applicable_slots: [brand, color, price, model, attribute]
+
+  - ontology_id: home.appliances.robot_vacuum
+    canonical_key: robot_supurge
+    domain: home
+    parent_id: home.appliances
+    display_name_tr: Robot Süpürge
+    showcase: false
+    size_system: none
+    applicable_slots: [brand, color, price, model, attribute]
+
+  - ontology_id: home.kitchen.airfryer
+    canonical_key: airfryer
+    domain: home
+    parent_id: home.kitchen
+    display_name_tr: Airfryer
+    showcase: false
+    size_system: volume_capacity
+    applicable_slots: [brand, color, price, model, attribute]
+
+  - ontology_id: cosmetics.skincare.moisturizer
+    canonical_key: cilt_bakim_kremi
+    domain: cosmetics
+    parent_id: cosmetics.skincare
+    display_name_tr: Cilt Bakım Kremi
+    showcase: false
+    size_system: volume_capacity
+    applicable_slots: [brand, price, attribute]
+
+size_systems:
+  - system_key: none
+    display_name_tr: Bedensiz / Standart
+    canonical_values: []
+    description: Elektronik ve standart ebatlı ürün kategorileri için beden yok.
+
+  - system_key: clothing
+    display_name_tr: Harfli Giyim Bedeni
+    canonical_values: [xs, s, m, l, xl, xxl]
+    description: Standart yetişkin giyim harf bedenleri.
+
+  - system_key: footwear
+    display_name_tr: EU Ayakkabı Numarası
+    canonical_values: ["36", "37", "38", "39", "40", "41", "42", "43", "44", "45", "46"]
+    description: Avrupa ayakkabı numara sistemi.
+
+  - system_key: eu_kids_age
+    display_name_tr: Çocuk Yaş Grubu
+    canonical_values: ["3-4 yas", "5-6 yas", "7-8 yas", "9-10 yas", "11-12 yas", "13-14 yas"]
+    description: Çocuk dış giyim yaş aralıkları.
+
+  - system_key: volume_capacity
+    display_name_tr: Hacim / Kapasite
+    canonical_values: ["50 ml", "100 ml", "500 ml", "1 litre", "1.5 litre", "5 litre"]
+    description: Termos, kozmetik, çanta veya mutfak aleti hacim basamakları.
+
+units:
+  - unit_key: TRY
+    category: currency
+    display_symbol: TL
+    aliases: [tl, türk lirası, lira, te le, "₺"]
+    is_monetary: true
+  - unit_key: GB
+    category: storage
+    display_symbol: GB
+    aliases: [gb, cigabayt, gigabayt, gigabyte]
+    is_monetary: false
+  - unit_key: TB
+    category: storage
+    display_symbol: TB
+    aliases: [tb, terabayt, terabyte]
+    is_monetary: false
+  - unit_key: inc
+    category: display
+    display_symbol: inç
+    aliases: [inç, inc, inch]
+    is_monetary: false
+  - unit_key: saat
+    category: battery
+    display_symbol: saat
+    aliases: [saat, sa]
+    is_monetary: false
+  - unit_key: mAh
+    category: battery
+    display_symbol: mAh
+    aliases: [mah, miliamper]
+    is_monetary: false
+  - unit_key: litre
+    category: volume
+    display_symbol: litre
+    aliases: [litre, lt, l]
+    is_monetary: false
+  - unit_key: ml
+    category: volume
+    display_symbol: ml
+    aliases: [ml, mililitre]
+    is_monetary: false
+  - unit_key: kg
+    category: weight
+    display_symbol: kg
+    aliases: [kg, kilogram, kilo]
+    is_monetary: false
+  - unit_key: gr
+    category: weight
+    display_symbol: gr
+    aliases: [gr, g, gram]
+    is_monetary: false
+  - unit_key: Hz
+    category: frequency
+    display_symbol: Hz
+    aliases: [hz, hertz, herz]
+    is_monetary: false
+  - unit_key: W
+    category: power
+    display_symbol: W
+    aliases: [w, watt, vat]
+    is_monetary: false
+  - unit_key: cm
+    category: length
+    display_symbol: cm
+    aliases: [cm, santimetre]
+    is_monetary: false
+  - unit_key: mm
+    category: length
+    display_symbol: mm
+    aliases: [mm, milimetre]
+    is_monetary: false
+
+boolean_operators:
+  - operator: all_of
+    default_polarity: positive
+    default_modality: must
+    description: Tüm pozitif zorunlu ölçütlerin kesişimi (varsayılan VE).
+  - operator: any_of
+    default_polarity: positive
+    default_modality: should
+    description: VEYA / ya da bağlaçlı alternatif seçenek kümesi (marka, renk, beden).
+  - operator: not
+    default_polarity: negative
+    default_modality: must_not
+    description: olmasın / hariç / değil dışlama kapsamı; asla applied_filters içine terfi etmez.
+
+provenance_kinds:
+  - rule
+  - ml_candidate
+  - user_edit
