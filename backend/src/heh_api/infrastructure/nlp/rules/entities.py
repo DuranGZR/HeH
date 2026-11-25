@@ -9,6 +9,7 @@ from typing import Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
+from heh_api.domain.taxonomy import SizeSystemKey
 from heh_api.infrastructure.nlp.rules.normalize import NormalizationResult
 
 EntityKind = Literal["category", "brand", "color", "size", "gender", "attribute"]
@@ -34,7 +35,7 @@ class CategoryAliasConfig(BaseModel):
     ontology_id: str
     display_name: str
     showcase: bool
-    size_system: Literal["none", "clothing", "footwear"]
+    size_system: SizeSystemKey
     aliases: tuple[str, ...] = Field(min_length=1)
 
 

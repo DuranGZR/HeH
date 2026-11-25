@@ -88,7 +88,7 @@ categories:
     ontology_id: home.kitchen.thermos
     display_name: Termos
     showcase: false
-    size_system: none
+    size_system: volume_capacity
     aliases:
       - termos
 
@@ -96,7 +96,7 @@ categories:
     ontology_id: home.kitchen.coffee_maker
     display_name: Kahve Makinesi
     showcase: false
-    size_system: none
+    size_system: volume_capacity
     aliases:
       - kahve makinesi
       - filtre kahve makinesi

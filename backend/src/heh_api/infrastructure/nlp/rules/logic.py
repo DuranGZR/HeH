@@ -27,6 +27,22 @@ _POST_NEGATION_PATTERN = re.compile(
 _PRE_CLAUSE_BREAK_PATTERN = re.compile(r"\b(?:ama|fakat|ancak)\b|[;,.!?]")
 _MODIFIER_NEGATION_DEĞIL_PATTERN = re.compile(r"^\s*de[ğg]il\b")
 
+_ONTOLOGY_UNIT_KEY_MAP: dict[str, str] = {
+    "gb": "GB",
+    "tb": "TB",
+    "inç": "inc",
+    "saat": "saat",
+    "mah": "mAh",
+    "l": "litre",
+    "ml": "ml",
+    "kg": "kg",
+    "g": "gr",
+    "hz": "Hz",
+    "w": "W",
+    "cm": "cm",
+    "mm": "mm",
+}
+
 _OOD_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(
         r"(?:\bhava\s+nas[ıi]l|(?<!ak[ıi]ll[ıi]\s)\bsaat\s+ka[çc]|merhaba|selam|naber|nas[ıi]ls[ıi]n|"
@@ -212,6 +228,8 @@ def assemble_search_intent_ast(
                 value=(entities.category.canonical_key,),
                 display_label=f"{entities.category.display_name} olmasın",
                 source_span=cat_mention.raw_span,
+                span_start=cat_mention.start,
+                span_end=cat_mention.end,
             )
         )
         logic_groups.append(ConstraintGroup(operator="not", criterion_ids=("cat-not-1",)))
@@ -225,6 +243,8 @@ def assemble_search_intent_ast(
                 value=active_category.canonical_key,
                 display_label=active_category.display_name,
                 source_span=cat_mention.raw_span,
+                span_start=cat_mention.start,
+                span_end=cat_mention.end,
             )
         )
 
@@ -238,6 +258,8 @@ def assemble_search_intent_ast(
                 value=numbers.price,
                 display_label=numbers.display_label,
                 required=numbers.modality != "approximate",
+                modality="should" if numbers.modality == "approximate" else "must",
+                unit="TRY",
                 source_span=numbers.source_span,
             )
         )
@@ -282,7 +304,10 @@ def assemble_search_intent_ast(
                         operator="in",
                         value=tuple(c.canonical_key for c in cluster),
                         display_label=" veya ".join(c.display_label for c in cluster),
+                        modality="should",
                         source_span=text[cluster[0].start : cluster[-1].end],
+                        span_start=cluster[0].start,
+                        span_end=cluster[-1].end,
                     )
                 )
                 logic_groups.append(ConstraintGroup(operator="any_of", criterion_ids=(crit_id,)))
@@ -299,6 +324,8 @@ def assemble_search_intent_ast(
                         value=single.canonical_key,
                         display_label=single.display_label,
                         source_span=single.raw_span,
+                        span_start=single.start,
+                        span_end=single.end,
                     )
                 )
                 all_of_ids.append(crit_id)
@@ -331,7 +358,10 @@ def assemble_search_intent_ast(
                 operator="in",
                 value=tuple(s.canonical_key for s in distinct_pos_sizes),
                 display_label=" veya ".join(s.display_label for s in distinct_pos_sizes),
+                modality="should",
                 source_span=text[distinct_pos_sizes[0].start : distinct_pos_sizes[-1].end],
+                span_start=distinct_pos_sizes[0].start,
+                span_end=distinct_pos_sizes[-1].end,
             )
         )
         logic_groups.append(ConstraintGroup(operator="any_of", criterion_ids=("size-or-1",)))
@@ -346,6 +376,8 @@ def assemble_search_intent_ast(
                 value=sz0.canonical_key,
                 display_label=sz0.display_label,
                 source_span=sz0.raw_span,
+                span_start=sz0.start,
+                span_end=sz0.end,
             )
         )
         all_of_ids.append("size-1")
@@ -363,6 +395,8 @@ def assemble_search_intent_ast(
                 value=g_item.canonical_key,
                 display_label=g_item.display_label,
                 source_span=g_item.raw_span,
+                span_start=g_item.start,
+                span_end=g_item.end,
             )
         )
         all_of_ids.append(crit_id)
@@ -388,6 +422,8 @@ def assemble_search_intent_ast(
                     value=(neg_item.canonical_key,),
                     display_label=f"{neg_item.display_label} olmasın",
                     source_span=neg_item.raw_span,
+                    span_start=neg_item.start,
+                    span_end=neg_item.end,
                 )
             )
             logic_groups.append(ConstraintGroup(operator="not", criterion_ids=(crit_id,)))
@@ -413,6 +449,8 @@ def assemble_search_intent_ast(
                 value=attr.canonical_key,
                 display_label=attr.display_label,
                 source_span=attr.raw_span,
+                span_start=attr.start,
+                span_end=attr.end,
             )
         )
         all_of_ids.append(crit_id)
@@ -430,6 +468,7 @@ def assemble_search_intent_ast(
                 operator="eq",
                 value=meas.raw_span,
                 display_label=val_str,
+                unit=_ONTOLOGY_UNIT_KEY_MAP.get(meas.unit, meas.unit),
                 source_span=meas.raw_span,
             )
         )
@@ -468,6 +507,7 @@ def assemble_search_intent_ast(
         confidence_state = "high"
 
     intent = SearchIntentV2(
+        intent_type="unsupported" if is_ood else "ambiguous" if has_conflict else "product_search",
         raw_query=safe_raw_query,
         normalized_query=safe_norm_query,
         locale="tr-TR",

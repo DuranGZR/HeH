@@ -53,9 +53,15 @@ export interface SearchCriterionNodeInput {
   readonly value: string | readonly string[] | PriceValueInput;
   readonly display_label: string;
   readonly required?: boolean;
+  readonly polarity?: "positive" | "negative";
+  readonly modality?: "must" | "should" | "must_not";
+  readonly explicit?: boolean;
   readonly provenance?: "rule" | "ml_candidate" | "user_edit";
   readonly confidence?: number;
   readonly source_span?: string | null;
+  readonly span_start?: number | null;
+  readonly span_end?: number | null;
+  readonly unit?: string | null;
 }
 
 export interface SearchCriterionNodeOutput {
@@ -65,9 +71,15 @@ export interface SearchCriterionNodeOutput {
   readonly value: string | readonly string[] | PriceValueOutput;
   readonly display_label: string;
   readonly required?: boolean;
+  readonly polarity?: "positive" | "negative";
+  readonly modality?: "must" | "should" | "must_not";
+  readonly explicit?: boolean;
   readonly provenance?: "rule" | "ml_candidate" | "user_edit";
   readonly confidence?: number;
   readonly source_span?: string | null;
+  readonly span_start?: number | null;
+  readonly span_end?: number | null;
+  readonly unit?: string | null;
 }
 
 export interface ConstraintGroup {
@@ -77,6 +89,8 @@ export interface ConstraintGroup {
 
 export interface SearchIntentV2Input {
   readonly schema_version?: "2.0.0";
+  readonly ontology_version?: string;
+  readonly intent_type?: "product_search" | "refine_search" | "unsupported" | "ambiguous";
   readonly raw_query: string;
   readonly normalized_query: string;
   readonly locale?: "tr-TR";
@@ -88,6 +102,8 @@ export interface SearchIntentV2Input {
 
 export interface SearchIntentV2Output {
   readonly schema_version?: "2.0.0";
+  readonly ontology_version?: string;
+  readonly intent_type?: "product_search" | "refine_search" | "unsupported" | "ambiguous";
   readonly raw_query: string;
   readonly normalized_query: string;
   readonly locale?: "tr-TR";
