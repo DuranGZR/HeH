@@ -205,9 +205,12 @@ export function useSearchFlow(options?: UseSearchFlowOptions): UseSearchFlowResu
       const nextIntentOutput: SearchIntentV2Output = {
         ...parseState.intent,
         criteria: nextCriteria,
-        logic_groups: (parseState.intent.logic_groups ?? []).filter((group) =>
-          group.criterion_ids.some((id) => id !== criterionId),
-        ),
+        logic_groups: (parseState.intent.logic_groups ?? [])
+          .map((group) => ({
+            ...group,
+            criterion_ids: group.criterion_ids.filter((id) => id !== criterionId),
+          }))
+          .filter((group) => group.criterion_ids.length > 0),
       };
 
       abortRef.current?.abort();

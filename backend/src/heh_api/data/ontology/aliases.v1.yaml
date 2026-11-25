@@ -1,0 +1,247 @@
+version: "1.0.0"
+
+categories:
+  - canonical_key: erkek_mont
+    ontology_id: apparel.outerwear.mens_coat
+    display_name: Erkek Mont
+    showcase: true
+    size_system: clothing
+    aliases:
+      - erkek mont
+      - şişme mont
+      - sisme mont
+      - erkek kaban
+      - kabanı
+      - kaban
+      - parka
+      - montu
+      - mont
+
+  - canonical_key: bluetooth_kulaklik
+    ontology_id: electronics.audio.bluetooth_headphones
+    display_name: Bluetooth Kulaklık
+    showcase: true
+    size_system: none
+    aliases:
+      - bluetooth kulaklık
+      - bluetooth kulaklik
+      - kablosuz kulaklık
+      - kablosuz kulaklik
+      - kulak üstü kulaklık
+      - kulak içi kulaklık
+      - kulaklık
+      - kulaklik
+
+  - canonical_key: spor_ayakkabi
+    ontology_id: footwear.athletic.sneakers
+    display_name: Spor Ayakkabı
+    showcase: true
+    size_system: footwear
+    aliases:
+      - spor ayakkabı
+      - spor ayakkabi
+      - koşu ayakkabısı
+      - kosu ayakkabisi
+      - yürüyüş ayakkabısı
+      - sneaker
+      - ayakkabı
+      - ayakkabi
+
+  - canonical_key: laptop
+    ontology_id: electronics.computing.laptop
+    display_name: Laptop
+    showcase: true
+    size_system: none
+    aliases:
+      - dizüstü bilgisayar
+      - dizustu bilgisayar
+      - oyun bilgisayarı
+      - laptop
+      - notebook
+      - ultrabook
+      - dizüstü
+      - macbook
+
+  - canonical_key: cep_telefonu
+    ontology_id: electronics.mobile.smartphone
+    display_name: Cep Telefonu
+    showcase: true
+    size_system: none
+    aliases:
+      - akıllı telefon
+      - akilli telefon
+      - cep telefonu
+      - telefon
+      - iphone
+
+  - canonical_key: oyuncu_koltugu
+    ontology_id: home.furniture.gaming_chair
+    display_name: Oyuncu Koltuğu
+    showcase: false
+    size_system: none
+    aliases:
+      - oyuncu koltuğu
+      - oyuncu koltugu
+      - çalışma koltuğu
+
+  - canonical_key: termos
+    ontology_id: home.kitchen.thermos
+    display_name: Termos
+    showcase: false
+    size_system: none
+    aliases:
+      - termos
+
+  - canonical_key: kahve_makinesi
+    ontology_id: home.kitchen.coffee_maker
+    display_name: Kahve Makinesi
+    showcase: false
+    size_system: none
+    aliases:
+      - kahve makinesi
+      - filtre kahve makinesi
+      - espresso makinesi
+
+brands:
+  - canonical_key: mavi
+    display_label: Mavi
+    aliases: ["mavi jeans", "mavi"]
+    color_ambiguous: true
+  - canonical_key: sony
+    display_label: Sony
+    aliases: ["sony"]
+  - canonical_key: jbl
+    display_label: JBL
+    aliases: ["jbl"]
+  - canonical_key: nike
+    display_label: Nike
+    aliases: ["nike"]
+  - canonical_key: puma
+    display_label: Puma
+    aliases: ["puma"]
+  - canonical_key: adidas
+    display_label: Adidas
+    aliases: ["adidas"]
+  - canonical_key: skechers
+    display_label: Skechers
+    aliases: ["skechers"]
+  - canonical_key: under_armour
+    display_label: Under Armour
+    aliases: ["under armour"]
+  - canonical_key: lenovo
+    display_label: Lenovo
+    aliases: ["lenovo"]
+  - canonical_key: asus
+    display_label: Asus
+    aliases: ["asus"]
+  - canonical_key: hp
+    display_label: HP
+    aliases: ["hp"]
+  - canonical_key: dell
+    display_label: Dell
+    aliases: ["dell"]
+  - canonical_key: apple
+    display_label: Apple
+    aliases: ["apple", "macbook", "iphone", "airpods"]
+  - canonical_key: samsung
+    display_label: Samsung
+    aliases: ["samsung", "galaxy"]
+  - canonical_key: xiaomi
+    display_label: Xiaomi
+    aliases: ["xiaomi", "redmi"]
+  - canonical_key: anker
+    display_label: Anker
+    aliases: ["anker", "soundcore"]
+  - canonical_key: columbia
+    display_label: Columbia
+    aliases: ["columbia"]
+  - canonical_key: north_face
+    display_label: The North Face
+    aliases: ["the north face", "north face"]
+  - canonical_key: koton
+    display_label: Koton
+    aliases: ["koton"]
+  - canonical_key: zara
+    display_label: Zara
+    aliases: ["zara"]
+
+colors:
+  - canonical_key: siyah
+    display_label: Siyah
+    aliases: ["siyah"]
+  - canonical_key: beyaz
+    display_label: Beyaz
+    aliases: ["beyaz"]
+  - canonical_key: mavi
+    display_label: Mavi
+    aliases: ["mavi"]
+  - canonical_key: lacivert
+    display_label: Lacivert
+    aliases: ["lacivert"]
+  - canonical_key: kirmizi
+    display_label: Kırmızı
+    aliases: ["kırmızı", "kirmizi"]
+  - canonical_key: bordo
+    display_label: Bordo
+    aliases: ["bordo"]
+  - canonical_key: gri
+    display_label: Gri
+    aliases: ["gri", "füme", "fume", "antrasit"]
+  - canonical_key: yesil
+    display_label: Yeşil
+    aliases: ["yeşil", "yesil", "haki"]
+  - canonical_key: kahverengi
+    display_label: Kahverengi
+    aliases: ["kahverengi", "taba"]
+  - canonical_key: bej
+    display_label: Bej
+    aliases: ["bej", "krem", "ekru"]
+
+clothing_sizes:
+  - canonical_key: xs
+    display_label: XS
+    aliases: ["xs", "xsmall"]
+  - canonical_key: s
+    display_label: S
+    aliases: ["s", "small"]
+  - canonical_key: m
+    display_label: M
+    aliases: ["m", "medium"]
+  - canonical_key: l
+    display_label: L
+    aliases: ["l", "large"]
+  - canonical_key: xl
+    display_label: XL
+    aliases: ["xl", "xlarge"]
+  - canonical_key: xxl
+    display_label: XXL
+    aliases: ["xxl", "2xl"]
+
+footwear_sizes:
+  ["36", "37", "38", "39", "40", "41", "42", "43", "44", "45", "46"]
+
+attributes:
+  - canonical_key: anc
+    display_label: ANC (Gürültü Engelleme)
+    aliases: ["aktif gürültü engelleme", "gürültü engelleme", "anc"]
+  - canonical_key: su_gecirmez
+    display_label: Su Geçirmez
+    aliases: ["su geçirmez", "suya dayanıklı"]
+  - canonical_key: kulak_ustu
+    display_label: Kulak Üstü
+    aliases: ["kulak üstü"]
+  - canonical_key: kulak_ici
+    display_label: Kulak İçi
+    aliases: ["kulak içi"]
+  - canonical_key: kablosuz
+    display_label: Kablosuz
+    aliases: ["kablosuz", "bluetooth"]
+  - canonical_key: ergonomik
+    display_label: Ergonomik
+    aliases: ["ergonomik"]
+  - canonical_key: deri
+    display_label: Deri
+    aliases: ["deri"]
+  - canonical_key: pamuk
+    display_label: Pamuk
+    aliases: ["pamuk", "pamuklu"]

@@ -1,0 +1,1 @@
+"""Ontology alias tables package."""
