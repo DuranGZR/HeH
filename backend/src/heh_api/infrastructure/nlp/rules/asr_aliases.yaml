@@ -1,0 +1,220 @@
+version: "1.0.0"
+
+rules:
+  # --- Brand Phonetics ---
+  - id: asr_brand_jbl_cey_bi_el
+    category: brand_phonetics
+    pattern: "\\bcey\\s*bi\\s*el\\b"
+    replacement: "jbl"
+    example_asr: "cey bi el kulaklık"
+  - id: asr_brand_jbl_ce_bi_el
+    category: brand_phonetics
+    pattern: "\\bce\\s*bi\\s*el\\b"
+    replacement: "jbl"
+    example_asr: "ce bi el hoparlör"
+  - id: asr_brand_jbl_spaced
+    category: brand_phonetics
+    pattern: "\\b[jc]\\s+b\\s+l\\b"
+    replacement: "jbl"
+    example_asr: "j b l kulaklık"
+  - id: asr_brand_sony_phonetic
+    category: brand_phonetics
+    pattern: "\\bsoni\\b"
+    replacement: "sony"
+    example_asr: "soni kulaklık"
+  - id: asr_brand_nike_phonetic
+    category: brand_phonetics
+    pattern: "\\bnayk[ıi]?\\b"
+    replacement: "nike"
+    example_asr: "nayk olmasın"
+  - id: asr_brand_apple_phonetic
+    category: brand_phonetics
+    pattern: "\\bep[ıi]l\\b"
+    replacement: "apple"
+    example_asr: "epıl saat"
+  - id: asr_brand_iphone_phonetic
+    category: brand_phonetics
+    pattern: "\\b(?:i\\s*phone|ay\\s*fon|ayfon)\\b"
+    replacement: "iphone"
+    example_asr: "ayfon 13"
+  - id: asr_brand_samsung_typo
+    category: brand_phonetics
+    pattern: "\\bsamsunk\\b"
+    replacement: "samsung"
+    example_asr: "samsunk telefon"
+  - id: asr_brand_samsung_galaksi
+    category: brand_phonetics
+    pattern: "\\bsamsun\\s+galaksi\\b"
+    replacement: "samsung galaxy"
+    example_asr: "samsun galaksi s24"
+  - id: asr_brand_galaxy_phonetic
+    category: brand_phonetics
+    pattern: "\\bgalaksi\\b"
+    replacement: "galaxy"
+    example_asr: "galaksi s24"
+  - id: asr_brand_xiaomi_phonetic
+    category: brand_phonetics
+    pattern: "\\b(?:şayomi|şiyomi|sayomi|şavmi|şomi)\\b"
+    replacement: "xiaomi"
+    example_asr: "şayomi telefon"
+  - id: asr_brand_macbook_phonetic
+    category: brand_phonetics
+    pattern: "\\b(?:mek\\s*buk|mac\\s*buk)\\b"
+    replacement: "macbook"
+    example_asr: "mekbuk air"
+  - id: asr_brand_airpods_phonetic
+    category: brand_phonetics
+    pattern: "\\b(?:eirpods|ey[ıi]rpodz|eyrpodz|air\\s*podz|erpodz)\\b"
+    replacement: "airpods"
+    example_asr: "eyrpodz pro"
+  - id: asr_brand_skechers_phonetic
+    category: brand_phonetics
+    pattern: "\\b(?:ske[çc][ıi]r[zs]|sike[çc][ıi]rs|ske[çc]er)\\b"
+    replacement: "skechers"
+    example_asr: "skeçırs ayakkabı"
+  - id: asr_brand_lenovo_phonetic
+    category: brand_phonetics
+    pattern: "\\b(?:lenova|linovo)\\b"
+    replacement: "lenovo"
+    example_asr: "lenova laptop"
+  - id: asr_brand_north_face_phonetic
+    category: brand_phonetics
+    pattern: "\\bn[oö]rt\\s*feys\\b"
+    replacement: "the north face"
+    example_asr: "nort feys mont"
+  - id: asr_brand_anker_phonetic
+    category: brand_phonetics
+    pattern: "\\bank[ıi]r\\b"
+    replacement: "anker"
+    example_asr: "ankır kulaklık"
+  - id: asr_brand_asus_phonetic
+    category: brand_phonetics
+    pattern: "\\bas[üu]s\\b"
+    replacement: "asus"
+    example_asr: "asüs laptop"
+
+  # --- Spoken Turkish Numbers, Half-Thousands & Currency ---
+  - id: asr_num_bir_bucuk_bin
+    category: numeric_currency
+    pattern: "\\bbir\\s+bu[çc]uk\\s+bin\\b"
+    replacement: "1500"
+    example_asr: "bir buçuk bin altı mont"
+  - id: asr_num_iki_bucuk_bin
+    category: numeric_currency
+    pattern: "\\biki\\s+bu[çc]uk\\s+bin\\b"
+    replacement: "2500"
+    example_asr: "iki buçuk bin tl altı"
+  - id: asr_num_uc_bucuk_bin
+    category: numeric_currency
+    pattern: "\\b[üu][çc]\\s+bu[çc]uk\\s+bin\\b"
+    replacement: "3500"
+    example_asr: "üç buçuk bin üstü"
+  - id: asr_num_dort_bucuk_bin
+    category: numeric_currency
+    pattern: "\\bd[öo]rt\\s+bu[çc]uk\\s+bin\\b"
+    replacement: "4500"
+    example_asr: "dört buçuk bin arası"
+  - id: asr_num_bes_bucuk_bin
+    category: numeric_currency
+    pattern: "\\bbe[şs]\\s+bu[çc]uk\\s+bin\\b"
+    replacement: "5500"
+    example_asr: "beş buçuk bin altı"
+  - id: asr_num_fused_word_bin
+    category: numeric_currency
+    pattern: "\\b(iki|[üu][çc]|d[öo]rt|be[şs]|alt[ıi]|yedi|sekiz|dokuz|on|yirmi|otuz|k[ıi]rk|elli)bin(e|i|de|den)?\\b"
+    replacement: "\\1 bin\\2"
+    example_asr: "üçbin altı mont"
+  - id: asr_num_spaced_digit_bin
+    category: numeric_currency
+    pattern: "(?<!\\w)(\\d+)\\s*bin\\b"
+    replacement: "\\1 bin"
+    example_asr: "3bin altı"
+  - id: asr_currency_spelled_tl
+    category: numeric_currency
+    pattern: "\\b(?:te\\s*le|t\\s+l)\\b"
+    replacement: "tl"
+    example_asr: "3000 te le altı"
+
+  # --- Clothing Sizes & Units ---
+  - id: asr_size_em_beden
+    category: size_units
+    pattern: "\\bem\\s+beden\\b"
+    replacement: "m beden"
+    example_asr: "em beden siyah mont"
+  - id: asr_size_es_beden
+    category: size_units
+    pattern: "\\bes\\s+beden\\b"
+    replacement: "s beden"
+    example_asr: "es beden ceket"
+  - id: asr_size_el_beden
+    category: size_units
+    pattern: "\\bel\\s+beden\\b"
+    replacement: "l beden"
+    example_asr: "el beden mont"
+  - id: asr_size_xl_phonetic
+    category: size_units
+    pattern: "\\b(?:eks\\s*el|iks\\s*el)\\s+beden\\b"
+    replacement: "xl beden"
+    example_asr: "iks el beden mont"
+  - id: asr_size_xl_short
+    category: size_units
+    pattern: "\\b(?:eks\\s*lar[çc]|ekstra\\s+lar[çc])\\b"
+    replacement: "xl"
+    example_asr: "eks larç erkek mont"
+  - id: asr_size_xxl_phonetic
+    category: size_units
+    pattern: "\\b(?:dabul|duble|iki)\\s+iks\\s+el\\b"
+    replacement: "xxl"
+    example_asr: "dabul iks el mont"
+  - id: asr_size_xs_phonetic
+    category: size_units
+    pattern: "\\b(?:iks\\s*es|ikses)\\s+beden\\b"
+    replacement: "xs beden"
+    example_asr: "iks es beden"
+  - id: asr_unit_cigabayt
+    category: size_units
+    pattern: "\\bcigabayt\\b"
+    replacement: "gb"
+    example_asr: "16 cigabayt ram"
+  - id: asr_unit_terabayt
+    category: size_units
+    pattern: "\\bterabayt\\b"
+    replacement: "tb"
+    example_asr: "1 terabayt ssd"
+  - id: asr_unit_miliamper
+    category: size_units
+    pattern: "\\bmiliamper\\b"
+    replacement: "mah"
+    example_asr: "5000 miliamper"
+  - id: asr_unit_herz
+    category: size_units
+    pattern: "\\bherz\\b"
+    replacement: "hz"
+    example_asr: "144 herz"
+
+  # --- Commerce & Feature Phrases ---
+  - id: asr_phrase_bluetooth
+    category: commerce_phrases
+    pattern: "\\b(?:blutut|bulutut)\\b"
+    replacement: "bluetooth"
+    example_asr: "blutut kulaklık"
+  - id: asr_phrase_kulak_ustu
+    category: commerce_phrases
+    pattern: "\\bkulak\\s*[uü]st[uü]\\b"
+    replacement: "kulak üstü"
+    example_asr: "kulaküstü kulaklık"
+  - id: asr_phrase_kulak_ici
+    category: commerce_phrases
+    pattern: "\\bkulak\\s*i[cç]i\\b"
+    replacement: "kulak içi"
+    example_asr: "kulakiçi kulaklık"
+  - id: asr_phrase_su_gecirmez
+    category: commerce_phrases
+    pattern: "\\bsu\\s*ge[cç]irmez\\b"
+    replacement: "su geçirmez"
+    example_asr: "sugeçirmez mont"
+  - id: asr_phrase_gurultu_engelleme
+    category: commerce_phrases
+    pattern: "\\bg[uü]r[uü]lt[uü]\\s*(?:engelleme|engelleyici)\\b"
+    replacement: "gürültü engelleme"
+    example_asr: "gurultu engelleyici kulaklık"

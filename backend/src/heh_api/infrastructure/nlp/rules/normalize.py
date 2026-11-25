@@ -1,29 +1,66 @@
-"""D16 Turkish-aware Unicode NFC normalization, suffix handling, and model-name protection."""
+"""D16/D29 Turkish-aware Unicode NFC normalization, ASR YAML aliases, and model protection."""
 
 import re
 import unicodedata
 from dataclasses import dataclass
+from functools import lru_cache
+from importlib import resources
+from typing import Literal
+
+import yaml
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 _CONTROL_CHAR_PATTERN = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\u200b-\u200f\ufeff]")
 _APOSTROPHE_VARIANTS = ("\u2019", "\u2018", "\u02bc", "`", "\u00b4")
 _HYPHEN_VARIANTS = ("\u2013", "\u2014", "\u2212")
 
-# Multiword colloquial/ASR canonicalizations preserving Turkish word boundaries
-_ASR_PHRASE_REPLACEMENTS: tuple[tuple[re.Pattern[str], str], ...] = (
-    (re.compile(r"\bcey\s*bi\s*el\b"), "jbl"),
-    (re.compile(r"\bce\s*bi\s*el\b"), "jbl"),
-    (re.compile(r"\bblutut\b"), "bluetooth"),
-    (re.compile(r"\bkulak\s*[uü]st[uü]\b"), "kulak üstü"),
-    (re.compile(r"\bkulak\s*i[cç]i\b"), "kulak içi"),
-    (re.compile(r"\bsu\s*ge[cç]irmez\b"), "su geçirmez"),
-    (re.compile(r"\bg[uü]r[uü]lt[uü]\s*engelleme\b"), "gürültü engelleme"),
-    (re.compile(r"\bem\s+beden\b"), "m beden"),
-    (re.compile(r"\bes\s+beden\b"), "s beden"),
-    (re.compile(r"\beks\s*el\s+beden\b"), "xl beden"),
-    (re.compile(r"\beks\s*lar[cç]\b"), "xl"),
-    (re.compile(r"\bi\s*phone\b"), "iphone"),
-    (re.compile(r"(?<!\w)(\d+)\s*bin\b"), r"\1 bin"),
-)
+AsrCategory = Literal["brand_phonetics", "numeric_currency", "size_units", "commerce_phrases"]
+
+
+class AsrAliasRule(BaseModel):
+    """Single deterministic ASR normalization rule backed by `asr_aliases.yaml`."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    id: str = Field(min_length=1, max_length=80)
+    category: AsrCategory
+    pattern: str = Field(min_length=1, max_length=240)
+    replacement: str = Field(min_length=1, max_length=120)
+    example_asr: str = Field(min_length=1, max_length=160)
+
+    @field_validator("pattern")
+    @classmethod
+    def _validate_regex(cls, raw_pattern: str) -> str:
+        re.compile(raw_pattern)
+        return raw_pattern
+
+
+class AsrAliasDictionaryV1(BaseModel):
+    """Validated versioned ASR phonetic and spoken-numeric replacement dictionary."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    version: str
+    rules: tuple[AsrAliasRule, ...] = Field(min_length=1)
+
+
+@lru_cache(maxsize=1)
+def load_asr_alias_dictionary() -> AsrAliasDictionaryV1:
+    """Load and validate versioned ASR normalization aliases once at startup."""
+    raw_yaml = (
+        resources.files("heh_api.infrastructure.nlp.rules")
+        .joinpath("asr_aliases.yaml")
+        .read_text(encoding="utf-8")
+    )
+    loaded = yaml.safe_load(raw_yaml)
+    return AsrAliasDictionaryV1.model_validate(loaded)
+
+
+@lru_cache(maxsize=1)
+def _compiled_asr_rules() -> tuple[tuple[str, re.Pattern[str], str], ...]:
+    dictionary = load_asr_alias_dictionary()
+    return tuple((rule.id, re.compile(rule.pattern), rule.replacement) for rule in dictionary.rules)
+
 
 _UNIT_FOLLOWS_LOOKAHEAD = (
     r"(?!\s*(?:gb|tb|mb|mah|hz|in[çc]|kg|mm|cm|watt|w|mp|ml|saat|litre|lt|l)\b)"
@@ -62,8 +99,8 @@ _CURRENCY_APOSTROPHE_PATTERN = re.compile(
     r"\b(tl|lira)'(nın|nin|nun|nün|ın|in|un|ün|ya|ye|a|e|da|de|ta|te|dan|den|tan|ten|yı|yi|yu|yü|ı|i|u|ü)\b"
 )
 _WORD_APOSTROPHE_PATTERN = re.compile(
-    r"\b([a-zçğıöşü]{2,})'(?:nın|nin|nun|nün|ın|in|un|ün|ya|ye|a|e|da|de|ta|te|"
-    r"nda|nde|ndan|nden|dan|den|tan|ten|yı|yi|yu|yü|ı|i|u|ü)\b"
+    r"\b([a-zçğıöşü]{2,})'(?:nın|nin|nun|nün|ın|in|un|ün|ya|yi|yu|yü|ı|i|u|ü|"
+    r"ya|ye|a|e|da|de|ta|te|nda|nde|ndan|nden|dan|den|tan|ten)\b"
 )
 _CLAUSE_PUNCT_SPACING_PATTERN = re.compile(r"\s*((?<!\d),(?!\d)|[;!?()])\s*")
 _TERMINAL_DOT_PATTERN = re.compile(r"(?<!\d)\.(?!\d)")
@@ -90,13 +127,14 @@ class NormalizedToken:
 
 @dataclass(frozen=True)
 class NormalizationResult:
-    """Immutable D16 normalization output preserving raw query, normalized form, and spans."""
+    """Immutable normalization output preserving raw query, canonical form, and ASR provenance."""
 
     raw_display: str
     normalized: str
     canonical_for_matching: str
     protected_spans: tuple[ProtectedSpan, ...]
     tokens: tuple[NormalizedToken, ...]
+    applied_asr_rules: tuple[str, ...] = ()
 
 
 def turkish_lower(text: str) -> str:
@@ -118,11 +156,15 @@ def strip_control_and_unify_punctuation(text: str) -> str:
     return " ".join(cleaned.strip().split())
 
 
-def _apply_asr_and_compound_aliases(text: str) -> str:
+def _apply_asr_and_compound_aliases(text: str) -> tuple[str, tuple[str, ...]]:
     updated = text
-    for pattern, replacement in _ASR_PHRASE_REPLACEMENTS:
-        updated = pattern.sub(replacement, updated)
-    return " ".join(updated.split())
+    applied_ids: list[str] = []
+    for rule_id, pattern, replacement in _compiled_asr_rules():
+        next_text, sub_count = pattern.subn(replacement, updated)
+        if sub_count > 0:
+            applied_ids.append(rule_id)
+            updated = next_text
+    return " ".join(updated.split()), tuple(applied_ids)
 
 
 def _collect_protected_spans(text: str) -> tuple[ProtectedSpan, ...]:
@@ -172,10 +214,11 @@ def normalize_query_for_m0(raw_query: str) -> NormalizationResult:
             canonical_for_matching="",
             protected_spans=(),
             tokens=(),
+            applied_asr_rules=(),
         )
 
     lowered = turkish_lower(raw_display)
-    aliased = _apply_asr_and_compound_aliases(lowered)
+    aliased, applied_asr_rules = _apply_asr_and_compound_aliases(lowered)
     de_inflected = _strip_inflectional_apostrophes(aliased)
     canonical = _strip_punctuation_for_matching(de_inflected)
     protected = _collect_protected_spans(canonical)
@@ -199,4 +242,5 @@ def normalize_query_for_m0(raw_query: str) -> NormalizationResult:
         canonical_for_matching=canonical,
         protected_spans=protected,
         tokens=tuple(token_list),
+        applied_asr_rules=applied_asr_rules,
     )

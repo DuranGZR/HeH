@@ -22,38 +22,49 @@ export type SpeechErrorCode =
   | "PLATFORM_ERROR";
 
 export interface SpeechPermissionResult {
-  status: SpeechPermissionStatus;
-  canAskAgain: boolean;
+  readonly status: SpeechPermissionStatus;
+  readonly canAskAgain: boolean;
+}
+
+export interface SpeechLocaleSupport {
+  readonly locale: string;
+  readonly supported: boolean;
+  readonly installedOffline: boolean;
 }
 
 export interface SpeechSessionState {
-  status: SpeechLifecycleStatus;
-  permission: SpeechPermissionStatus;
-  canAskAgain: boolean;
-  partialTranscript: string;
-  finalTranscript: string;
-  errorCode: SpeechErrorCode | null;
-  errorMessage: string | null;
+  readonly status: SpeechLifecycleStatus;
+  readonly permission: SpeechPermissionStatus;
+  readonly canAskAgain: boolean;
+  readonly partialTranscript: string;
+  readonly finalTranscript: string;
+  readonly errorCode: SpeechErrorCode | null;
+  readonly errorMessage: string | null;
 }
 
-export interface SpeechAdapterCallbacks {
-  onStart: () => void;
-  onPartialResult: (transcript: string) => void;
-  onFinalResult: (transcript: string) => void;
-  onEmptyResult: () => void;
-  onError: (code: SpeechErrorCode, message: string) => void;
-  onEnd: () => void;
+export interface SpeechProviderCallbacks {
+  readonly onStart: () => void;
+  readonly onPartialResult: (transcript: string) => void;
+  readonly onFinalResult: (transcript: string) => void;
+  readonly onEmptyResult: () => void;
+  readonly onError: (code: SpeechErrorCode, message: string) => void;
+  readonly onEnd: () => void;
 }
 
-export interface SpeechAdapter {
+/** Canonical STT provider interface isolating native/mock speech modules behind a clean port. */
+export interface SpeechProvider {
   isAvailable(): boolean;
   supportsOnDevice(): boolean;
+  checkLocaleSupport?(locale: string): Promise<SpeechLocaleSupport>;
   getPermission(): Promise<SpeechPermissionResult>;
   requestPermission(): Promise<SpeechPermissionResult>;
-  startListening(locale: string, callbacks: SpeechAdapterCallbacks): () => void;
+  startListening(locale: string, callbacks: SpeechProviderCallbacks): () => void;
   stopListening(): void;
   abortListening(): void;
 }
+
+export type SpeechAdapter = SpeechProvider;
+export type SpeechAdapterCallbacks = SpeechProviderCallbacks;
 
 export const SPEECH_RECOVERY_MESSAGES: Record<SpeechErrorCode, string> = {
   PERMISSION_DENIED: "Mikrofon kapalı. Yazarak devam edebilirsin.",

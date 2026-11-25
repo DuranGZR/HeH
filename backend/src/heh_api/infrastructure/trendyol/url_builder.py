@@ -1,5 +1,6 @@
 """Safe TrendyolRouteStrategy implementations and URLBuilder security guardrails."""
 
+import re
 from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Protocol
@@ -203,6 +204,47 @@ class CanonicalSearchQueryStrategy:
         return validate_provider_url(
             candidate_url, self.strategy_kind, enforce_allowlisted_params=True
         )
+
+
+_NEGATION_SUFFIX_RE = (
+    r"(?:\s+(?:de|da))?"
+    r"(?:\s+(?:olmas[ıi]n|olmayan|hari[çc]|d[ıi][şs][ıi]nda|istemiyorum|de[ğg]il))?"
+)
+
+
+def _strip_unsupported_negations(intent: SearchIntentV2) -> str:
+    """Strip excluded NOT phrases (including ASR/uppercase variants) from fallback `q=` text."""
+    stripped = normalize_turkish_text(intent.normalized_query or intent.raw_query)
+    terms: list[str] = []
+    for crit in intent.criteria:
+        if crit.operator != "not_in":
+            continue
+        if crit.source_span:
+            terms.append(normalize_turkish_text(crit.source_span))
+        raw_values = crit.value if isinstance(crit.value, tuple) else (str(crit.value),)
+        for raw_val in raw_values:
+            terms.append(normalize_turkish_text(str(raw_val).replace("_", " ")))
+        label_root = re.sub(
+            r"\s+(?:olmas[ıi]n|olmayan|hari[çc]|d[ıi][şs][ıi]nda|istemiyorum|de[ğg]il).*$",
+            "",
+            normalize_turkish_text(crit.display_label),
+        )
+        if label_root:
+            terms.append(label_root)
+
+    seen_terms: list[str] = sorted(
+        {term.strip() for term in terms if term.strip()}, key=len, reverse=True
+    )
+    for term in seen_terms:
+        stripped = re.sub(rf"(?<!\w){re.escape(term)}{_NEGATION_SUFFIX_RE}\b", " ", stripped)
+
+    # Remove dangling exclusion conjunctions left behind after multi-brand negation stripping.
+    stripped = re.sub(
+        r"\b(?:ve\s+)?(?:olmas[ıi]n|olmayan|hari[çc]|d[ıi][şs][ıi]nda|istemiyorum)\b",
+        " ",
+        stripped,
+    )
+    return normalize_display_query(stripped)
 
 
 class TrendyolURLBuilder:
@@ -527,12 +569,11 @@ class TrendyolURLBuilder:
                     ]
                 query_text_override = normalize_display_query(" ".join(query_tokens))
             elif unsupported:
-                # Never forward excluded NOT phrases ('nike olmasın') into Trendyol q=
-                stripped = intent.raw_query
-                for crit in intent.criteria:
-                    if crit.operator == "not_in" and crit.source_span:
-                        stripped = stripped.replace(crit.source_span, " ")
-                query_text_override = normalize_display_query(stripped)
+                # Never forward excluded NOT phrases (including ASR/uppercase variants) into q=
+                cleaned_fallback = _strip_unsupported_negations(intent)
+                if not cleaned_fallback and category is None and not applied:
+                    cleaned_fallback = "arama"
+                query_text_override = cleaned_fallback
 
         can_use_facet_path = (
             category is not None
