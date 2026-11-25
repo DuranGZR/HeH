@@ -14,6 +14,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import {
   CriteriaReviewPanel,
   TextSearchComposer,
+  VoiceEntry,
   canSubmitSearchQuery,
   useSearchFlow,
 } from "@/features/search";
@@ -149,44 +150,21 @@ export default function SearchEntryScreen() {
           </Text>
 
           {mode === "voice" ? (
-            <View style={{ gap: spacing.sm }} testID="voice-entry-fallback-box">
-              {errorMessage ? (
-                <Text
-                  accessibilityLiveRegion="polite"
-                  maxFontSizeMultiplier={typography.caption.maxFontSizeMultiplier}
-                  style={[typography.caption, { color: palette.textSecondary }]}
-                  testID="voice-search-error"
-                >
-                  {errorMessage}
-                </Text>
-              ) : null}
-              <Pressable
-                accessibilityLabel="Yazarak devam et"
-                accessibilityRole="button"
-                hitSlop={hitSlop}
-                onPress={() => router.replace({ pathname: "/search", params: { mode: "text" } })}
-                style={({ pressed }) => [
-                  styles.button,
-                  {
-                    minHeight: touchTarget.minimum,
-                    borderRadius: radius.md,
-                    borderWidth: borderWidth.control,
-                    borderColor: palette.borderControl,
-                    paddingVertical: spacing.sm,
-                    paddingHorizontal: spacing.lg,
-                    backgroundColor: pressed ? palette.surfacePressed : palette.surfaceMuted,
-                  },
-                ]}
-                testID="voice-fallback-text-button"
-              >
-                <Text
-                  maxFontSizeMultiplier={typography.button.maxFontSizeMultiplier}
-                  style={[typography.button, { color: palette.textPrimary }]}
-                >
-                  Yazarak Devam Et
-                </Text>
-              </Pressable>
-            </View>
+            <VoiceEntry
+              isParsing={phase === "parsing"}
+              onSwitchToText={(prefill) =>
+                router.replace({
+                  pathname: "/search",
+                  params: prefill ? { mode: "text", q: prefill } : { mode: "text" },
+                })
+              }
+              onTranscriptReady={(spokenText) => {
+                setQueryText(spokenText);
+                void runParse(spokenText, "voice");
+              }}
+              onVoiceActivityStart={clearError}
+              parseErrorMessage={phase === "error" ? errorMessage : null}
+            />
           ) : (
             <TextSearchComposer
               autoFocus={!initialQuery.trim()}

@@ -2,7 +2,14 @@
 
 import unicodedata
 
-from heh_api.infrastructure.nlp.rules.normalize import normalize_query_for_m0, turkish_lower
+from heh_api.infrastructure.nlp.rules.adapter import RuleBasedQueryUnderstandingAdapter
+from heh_api.infrastructure.nlp.rules.normalize import (
+    load_asr_alias_dictionary,
+    normalize_query_for_m0,
+    turkish_lower,
+)
+from heh_api.infrastructure.snapshot_loader import load_mapping_snapshot
+from heh_api.infrastructure.trendyol.url_builder import TrendyolURLBuilder
 
 
 def test_turkish_lower_preserves_dotted_and_dotless_i_from_nfd_and_nfc() -> None:
@@ -45,3 +52,55 @@ def test_normalizer_handles_control_characters_and_arbitrary_unicode_without_err
     """Strip zero-width and control characters cleanly without throwing."""
     res = normalize_query_for_m0("\ufeff\u200b  3.000 TL   \t\n altı — siyah\x00 mont!! ")
     assert "3.000 tl altı - siyah mont" in res.canonical_for_matching
+
+
+def test_asr_aliases_yaml_loads_and_resolves_phonetic_brand_size_and_number_slips() -> None:
+    """Resolve phonetic brand/size/numeric ASR slips cleanly via `asr_aliases.yaml` + M0."""
+    dictionary = load_asr_alias_dictionary()
+    assert len(dictionary.rules) >= 35
+
+    adapter = RuleBasedQueryUnderstandingAdapter()
+
+    # Brand phonetics + spoken half-thousand ("iki buçuk bin") + spelled currency ("te le")
+    parsed_headphones = adapter.parse(
+        "cey bi el blutut kulaküstü kulaklık iki buçuk bin te le altı",
+        input_source="voice",
+    )
+    criteria_by_field = {c.field: c for c in parsed_headphones.intent.criteria}
+    assert criteria_by_field["brand"].value == "jbl"
+    assert criteria_by_field["category"].value == "bluetooth_kulaklik"
+    assert criteria_by_field["attribute"].value == "kablosuz"
+    assert criteria_by_field["price"].value.max_amount == 2500  # type: ignore[union-attr]
+
+    # Phonetic negation + fused Turkish thousand ("üçbin") + phonetic clothing size ("el beden")
+    parsed_coat = adapter.parse(
+        "nayk olmasın üçbin altı el beden siyah erkek mont",
+        input_source="voice",
+    )
+    coat_fields = {c.field: c for c in parsed_coat.intent.criteria}
+    assert coat_fields["brand"].operator == "not_in"
+    assert coat_fields["brand"].value == ("nike",)
+    assert coat_fields["size"].value == "l"
+    assert coat_fields["price"].value.max_amount == 3000  # type: ignore[union-attr]
+
+    coat_resolution = TrendyolURLBuilder().build_resolution(
+        parsed_coat.intent, load_mapping_snapshot()
+    )
+    assert "nayk" not in coat_resolution.url.lower()
+    assert "nike" not in coat_resolution.url.lower()
+    assert "olmas" not in coat_resolution.url.lower()
+
+    # Phonetic Xiaomi + unit ASR ("16 cigabayt") without mistaking 16 GB for TRY price
+    parsed_phone = normalize_query_for_m0("şayomi 16 cigabayt ram eyrpodz pro")
+    assert "xiaomi" in parsed_phone.canonical_for_matching
+    assert "16 gb ram" in parsed_phone.canonical_for_matching
+    assert "airpods pro" in parsed_phone.canonical_for_matching
+    assert "asr_brand_xiaomi_phonetic" in parsed_phone.applied_asr_rules
+
+    # Inflected fused thousand ("üçbinden") and spoken ANC variant ("gürültü engelleyici")
+    parsed_voice_anc = adapter.parse(
+        "üçbinden ucuz aktif gürültü engelleyici kulaklık", input_source="voice"
+    )
+    anc_fields = {c.field: c for c in parsed_voice_anc.intent.criteria}
+    assert anc_fields["price"].value.max_amount == 3000  # type: ignore[union-attr]
+    assert anc_fields["attribute"].value == "anc"

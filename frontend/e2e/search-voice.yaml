@@ -1,0 +1,72 @@
+appId: com.heh.app
+name: "W6 Gate-VSlice-Voice: End-to-End Turkish Voice Search Flow"
+tags:
+  - w6
+  - vslice-voice
+  - gate
+---
+# 1. Launch app cleanly in guest voice-first layout (mic MUST NOT auto-start before user tap)
+- launchApp:
+    clearState: true
+- assertVisible: "heh."
+- assertVisible: "Mikrofon yalnızca sen dokunduğunda açılır."
+
+# 2. Tap main microphone button -> arrive in explicit foreground voice entry screen
+- tapOn:
+    id: "home-voice-button"
+- assertVisible: "Sesli Arama Hazır"
+- assertVisible:
+    id: "voice-mic-toggle"
+
+# 3. Tap mic to request OS speech permission & start tr-TR listening
+- tapOn:
+    id: "voice-mic-toggle"
+- runFlow:
+    when:
+      visible: "Allow"
+    commands:
+      - tapOn: "Allow"
+- runFlow:
+    when:
+      visible: "İzin ver"
+    commands:
+      - tapOn: "İzin ver"
+
+# 4. Verify live listening surface shows ephemeral partial vs final transition
+- assertVisible:
+    id: "voice-listening-card"
+- assertVisible: "Anlık (geçici)"
+- waitForAnimationToEnd
+
+# 5. Once finalized, verify editable transcript box + 1-RTT CriteriaReview + edit-only /resolve
+- assertVisible:
+    id: "voice-final-transcript-box"
+- assertVisible:
+    id: "voice-transcript-input"
+- assertVisible:
+    id: "criteria-review-panel"
+
+# 6. Edit a recognized transcript word directly in Listening box and re-run 1-RTT parse
+- tapOn:
+    id: "voice-transcript-input"
+- eraseText: 50
+- inputText: "Sony veya JBL bluetooth kulaklık 3000 altı"
+- tapOn:
+    id: "voice-transcript-submit"
+- assertVisible:
+    id: "criteria-group-any-of-group-any-1"
+
+# 7. Edit AST chip via /resolve (remove JBL -> keep Sony) -> open safe Trendyol CTA
+- tapOn:
+    id: "remove-or-option-brand-or-1-jbl"
+- assertVisible:
+    id: "open-trendyol-cta"
+
+# 8. Background recovery / fallback safety (if mic denied/unavailable -> switch seamlessly to text)
+- pressKey: home
+- launchApp:
+    clearState: false
+- tapOn:
+    id: "voice-fallback-text-button"
+- assertVisible:
+    id: "text-search-input"
