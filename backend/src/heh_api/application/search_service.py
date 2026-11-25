@@ -18,6 +18,7 @@ from heh_api.schemas.search import (
 
 _M0_ADAPTER = RuleBasedQueryUnderstandingAdapter()
 _URL_BUILDER = TrendyolURLBuilder()
+_VERIFIED_MAPPING_STATUSES = frozenset({"FILTER_VERIFIED", "WEB_VERIFIED_PENDING_MOBILE"})
 
 
 def parse_search_query(
@@ -73,17 +74,34 @@ def list_provider_capabilities(
     summaries = []
     for cat in snapshot.categories:
         cat_expired = is_evidence_expired(cat.expires_at, now=now)
-        active_brands = [b for b in cat.brands if not is_evidence_expired(b.expires_at, now=now)]
-        active_colors = [c for c in cat.colors if not is_evidence_expired(c.expires_at, now=now)]
-        active_sizes = [s for s in cat.sizes if not is_evidence_expired(s.expires_at, now=now)]
+        cat_verified = cat.category_status in _VERIFIED_MAPPING_STATUSES
+        cat_active = not cat_expired and cat_verified
+        active_brands = [
+            b
+            for b in cat.brands
+            if b.status in _VERIFIED_MAPPING_STATUSES
+            and not is_evidence_expired(b.expires_at, now=now)
+        ]
+        active_colors = [
+            c
+            for c in cat.colors
+            if c.status in _VERIFIED_MAPPING_STATUSES
+            and not is_evidence_expired(c.expires_at, now=now)
+        ]
+        active_sizes = [
+            s
+            for s in cat.sizes
+            if s.status in _VERIFIED_MAPPING_STATUSES
+            and not is_evidence_expired(s.expires_at, now=now)
+        ]
         summaries.append(
             CategoryCapabilitySummary(
                 category_key=cat.category_key,
                 display_name=cat.display_name,
                 status="UNKNOWN" if cat_expired else cat.category_status,
-                supports_brand_or=not cat_expired and len(active_brands) > 1,
-                supports_color=not cat_expired and len(active_colors) > 0,
-                supports_size=not cat_expired and len(active_sizes) > 0,
+                supports_brand_or=cat_active and len(active_brands) > 1,
+                supports_color=cat_active and len(active_colors) > 0,
+                supports_size=cat_active and len(active_sizes) > 0,
                 negative_supported=cat.negative_supported,
             )
         )

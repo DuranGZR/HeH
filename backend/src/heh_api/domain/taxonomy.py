@@ -30,6 +30,9 @@ UnitCategory = Literal[
     "weight",
     "length",
     "power",
+    "pressure",
+    "acoustic",
+    "resolution",
 ]
 PolarityKind = Literal["positive", "negative"]
 ModalityKind = Literal["must", "should", "must_not"]
@@ -384,6 +387,12 @@ UNIT_SPECS_V1: Final[tuple[UnitSpec, ...]] = (
         aliases=("gb", "cigabayt", "gigabayt", "gigabyte"),
     ),
     UnitSpec(
+        unit_key="MB",
+        category="storage",
+        display_symbol="MB",
+        aliases=("mb", "megabayt", "megabyte"),
+    ),
+    UnitSpec(
         unit_key="TB",
         category="storage",
         display_symbol="TB",
@@ -454,6 +463,24 @@ UNIT_SPECS_V1: Final[tuple[UnitSpec, ...]] = (
         category="length",
         display_symbol="mm",
         aliases=("mm", "milimetre"),
+    ),
+    UnitSpec(
+        unit_key="Pa",
+        category="pressure",
+        display_symbol="Pa",
+        aliases=("pa", "paskal", "pascal"),
+    ),
+    UnitSpec(
+        unit_key="dB",
+        category="acoustic",
+        display_symbol="dB",
+        aliases=("db", "desibel"),
+    ),
+    UnitSpec(
+        unit_key="MP",
+        category="resolution",
+        display_symbol="MP",
+        aliases=("mp", "megapiksel", "megapixel"),
     ),
 )
 

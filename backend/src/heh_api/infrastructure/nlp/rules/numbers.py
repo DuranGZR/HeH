@@ -28,11 +28,14 @@ _UNIT_CANONICAL_MAP: dict[str, str] = {
     "mm": "mm",
     "inç": "inç",
     "inc": "inç",
+    "inch": "inç",
     "pa": "pa",
     "db": "db",
     "saat": "saat",
+    "sa": "saat",
     "w": "w",
     "watt": "w",
+    "vat": "w",
     "hz": "hz",
     "mah": "mah",
     "mp": "mp",
@@ -40,10 +43,14 @@ _UNIT_CANONICAL_MAP: dict[str, str] = {
 
 _UNIT_MEASUREMENT_PATTERN = re.compile(
     r"(?<!\w)(\d{1,3}(?:\.\d{3})+,\d+|\d{1,3}(?:\.\d{3})+|\d+(?:[.,]\d+)?)\s*"
-    r"(gb|tb|mb|kg|kilogram|kilo|gram|gr|g|ml|litre|lt|l|cm|mm|in[çc]|pa|db|saat|watt|w|hz|mah|mp)\b"
+    r"(gb|tb|mb|kg|kilogram|kilo|gram|gr|g|ml|litre|lt|l|cm|mm|in[çc]|inch|pa|db|saat|sa|watt|vat|w|hz|mah|mp)\b"
 )
 
-_SIZE_EXPLICIT_PATTERN = re.compile(r"(?<!\w)(\d{2})\s*(?:numara|no)\b")
+_SIZE_EXPLICIT_PATTERN = re.compile(r"(?<!\w)(\d{2}(?:[.,]5)?)\s*(?:numara|no)\b")
+_AGE_SIZE_PATTERN = re.compile(r"(?<!\w)\d{1,2}\s*-\s*\d{1,2}\s*ya[şs]\b|\b\d{1,2}\s*ya[şs]\b")
+_PERCENT_PATTERN = re.compile(
+    r"(?:\by[üu]zde\s+\d+(?:[.,]\d+)?|%\s*\d+(?:[.,]\d+)?|\d+(?:[.,]\d+)?\s*%)\b"
+)
 
 _WORD_ONES: dict[str, int] = {
     "bir": 1,
@@ -89,32 +96,36 @@ _NUMBER_WORD_SEQ = (
 _PRICE_ATOM_REGEX = (
     rf"(?:{_NUM_REGEX}(?:{_MULTIPLIER_REGEX})?"
     rf"|\b(?:{_NUMBER_WORD_SEQ}\s+)?(?:milyon|bin(?:[ie]?(?:den|de|e|i)?)?|y[üu]z)"
-    rf"(?:\s+{_NUMBER_WORD_SEQ})?)"
+    rf"(?:\s+(?!{_NUMBER_WORD_SEQ}\s+(?:bin|milyon)\b){_NUMBER_WORD_SEQ})?)"
 )
 
 _NEGATIVE_PRICE_VALUE_PATTERN = re.compile(r"(?:^|\s)-\s*\d+(?:[.,]\d+)?\s*(?:tl|lira)\b")
+_CASE_SUFFIX_RE = r"(?:nın|nin|nun|nün|ın|in|un|ün|ye|ya|yi|yı|yu|yü|den|dan|ten|tan|e|a|i|ı|u|ü)"
 _RANGE_PRICE_PATTERN = re.compile(
     rf"(?:"
     rf"(?P<low1>{_PRICE_ATOM_REGEX})(?:\s*(?:tl|lira))?\s*(?:-|ile)\s*"
-    rf"(?P<high1>{_PRICE_ATOM_REGEX})(?:\s+aras[ıi])?(?:\s*(?:tl|lira))?"
-    rf"|(?P<low2>{_PRICE_ATOM_REGEX})(?:\s*(?:tl|lira))?(?:\s+(?:den|dan))\s+"
+    rf"(?P<high1>{_PRICE_ATOM_REGEX})(?:\s+aras[ıi](?:nda)?)?(?:\s*(?:tl|lira))?"
+    rf"|(?P<low2>{_PRICE_ATOM_REGEX})(?:\s*(?:tl|lira))?(?:\s+(?:den|dan|ten|tan))\s+"
     rf"(?P<high2>{_PRICE_ATOM_REGEX})(?:\s*(?:tl|lira))?(?:\s+(?:e|a|ye|ya))?\s*kadar\b"
+    rf"|(?P<low3>{_PRICE_ATOM_REGEX})(?:\s*(?:tl|lira))?\s+"
+    rf"(?P<high3>{_PRICE_ATOM_REGEX})\s+aras[ıi](?:nda)?(?:\s*(?:tl|lira))?"
     rf")"
 )
 _DUAL_NEG_LOWER_PATTERN = re.compile(
-    rf"({_PRICE_ATOM_REGEX})\s*(?:tl|lira)?(?:\s*(?:den|dan))?\s*"
-    rf"(?:alt[ıi](?:nda)?\s*(?:da\s*)?olmas[ıi]n|(?:den|dan)\s*az\s*olmas[ıi]n|az\s*olmas[ıi]n)"
+    rf"({_PRICE_ATOM_REGEX})\s*(?:tl|lira)?(?:\s*{_CASE_SUFFIX_RE})?\s*"
+    rf"(?:alt[ıi](?:nda)?(?:\s+(?:da|de))?\s*(?:olmas[ıi]n|olmayan|istemiyorum|de[ğg]il)"
+    rf"|(?:(?:den|dan|ten|tan)\s*)?az\s*(?:da|de)?\s*(?:olmas[ıi]n|olmayan|istemiyorum|de[ğg]il))\b"
 )
 _DUAL_NEG_UPPER_PATTERN = re.compile(
-    rf"({_PRICE_ATOM_REGEX})\s*(?:tl|lira)?(?:\s*(?:den|dan))?\s*"
-    rf"(?:[üu]st[üu](?:nde)?|üzeri(?:nde)?|(?:den\s*)?(?:fazla|y[üu]ksek|pahal[ıi])|"
-    rf"(?:dan\s*)?(?:fazla|y[üu]ksek|pahal[ıi]))\s*(?:da\s*)?(?:olmas[ıi]n|olmayan|istemiyorum)\b"
+    rf"({_PRICE_ATOM_REGEX})\s*(?:tl|lira)?(?:\s*{_CASE_SUFFIX_RE})?\s*"
+    rf"(?:[üu]st[üu](?:nde)?|[üu]zeri(?:nde)?|(?:(?:den|dan|ten|tan)\s*)?(?:fazla|y[üu]ksek|pahal[ıi]))"
+    rf"\s*(?:(?:da|de)\s*)?(?:olmas[ıi]n|olmayan|istemiyorum|de[ğg]il)\b"
 )
 _UPPER_PRICE_PATTERN = re.compile(
     rf"(?:"
-    rf"(?P<val1>{_PRICE_ATOM_REGEX})\s*(?:tl|lira)?(?:\s*(?:nın|nin|nun|nün|in|ın|un|ün|ye|ya|yi|yı|yu|yü|e|a|i|ı|den|dan))?\s*"
-    rf"(?P<op1>alt[ıi](?:nda)?|(?:den\s*|dan\s*)?ucuz|(?:den\s*|dan\s*)?az|"
-    rf"(?:den\s*|dan\s*)?d[üu][şs][üu]k|ge[çc]mesin|kadar)\b"
+    rf"(?P<val1>{_PRICE_ATOM_REGEX})\s*(?:tl|lira)?(?:\s*{_CASE_SUFFIX_RE})?\s*"
+    rf"(?P<op1>alt[ıi](?:nda)?|(?:(?:den|dan|ten|tan)\s*)?ucuz|(?:(?:den|dan|ten|tan)\s*)?az|"
+    rf"(?:(?:den|dan|ten|tan)\s*)?d[üu][şs][üu]k|ge[çc]mesin|kadar)\b"
     rf"|en\s+(?P<op2>fazla|[çc]ok)\s+(?P<val2>{_PRICE_ATOM_REGEX})(?:\s*(?:tl|lira))?"
     rf"|(?:maksimum|max)\s+(?P<val3>{_PRICE_ATOM_REGEX})(?:\s*(?:tl|lira))?"
     rf"|b[üu]t[çc]e(?:m)?\s+(?P<val4>{_PRICE_ATOM_REGEX})(?:\s*(?:tl|lira))?"
@@ -123,12 +134,16 @@ _UPPER_PRICE_PATTERN = re.compile(
 )
 _LOWER_PRICE_PATTERN = re.compile(
     rf"(?:"
-    rf"(?P<val1>{_PRICE_ATOM_REGEX})\s*(?:tl|lira)?(?:\s*(?:nın|nin|nun|nün|in|ın|un|ün|den|dan))?\s*"
-    rf"(?P<op1>[üu]st[üu](?:nde)?|üzeri(?:nde)?|(?:den\s*|dan\s*)?y[üu]ksek|"
-    rf"(?:den\s*|dan\s*)?pahal[ıi]|(?:den\s*|dan\s*)?fazla)\b"
+    rf"(?P<val1>{_PRICE_ATOM_REGEX})\s*(?:tl|lira)?(?:\s*{_CASE_SUFFIX_RE})?\s*"
+    rf"(?P<op1>[üu]st[üu](?:nde)?|[üu]zeri(?:nde)?|(?:(?:den|dan|ten|tan)\s*)?y[üu]ksek|"
+    rf"(?:(?:den|dan|ten|tan)\s*)?pahal[ıi]|(?:(?:den|dan|ten|tan)\s*)?fazla)\b"
     rf"|en\s+az\s+(?P<val2>{_PRICE_ATOM_REGEX})(?:\s*(?:tl|lira))?"
     rf"|minimum\s+(?P<val3>{_PRICE_ATOM_REGEX})(?:\s*(?:tl|lira))?"
     rf")"
+)
+_WORD_UNIT_MEASUREMENT_PATTERN = re.compile(
+    rf"(?<!\w)(?P<num>(?:{_NUMBER_WORD_SEQ}(?:\s+bu[çc]uk)?|\d+(?:[.,]\d+)?\s+bu[çc]uk))\s+"
+    r"(?P<unit>gb|tb|mb|kg|kilogram|kilo|gram|gr|ml|litre|lt|cm|mm|in[çc]|inch|pa|db|saat|watt|vat|hz|mah|mp)\b"
 )
 _APPROX_PRICE_PATTERN = re.compile(
     rf"(?:"
@@ -231,7 +246,9 @@ def _format_try_number(amount: Decimal) -> str:
     return fixed.replace(".", ",")
 
 
-def _parse_price_atom(raw_atom: str) -> tuple[Decimal | None, bool]:
+def _parse_price_atom(
+    raw_atom: str, *, has_currency_hint: bool = False
+) -> tuple[Decimal | None, bool]:
     """Return `(amount, had_explicit_bin_multiplier)` for digit or Turkish word number."""
     cleaned = raw_atom.strip()
     if not cleaned:
@@ -247,7 +264,10 @@ def _parse_price_atom(raw_atom: str) -> tuple[Decimal | None, bool]:
             base_val *= Decimal("1000")
         return base_val, has_bin
 
-    word_val = _parse_turkish_word_number(cleaned.split())
+    word_list = cleaned.split()
+    if word_list in (["yüz"], ["yuz"]) and not has_currency_hint:
+        return None, False
+    word_val = _parse_turkish_word_number(word_list)
     return word_val, has_bin
 
 
@@ -278,6 +298,38 @@ def extract_unit_measurements(
         )
         consumed.append((match.start(), match.end()))
 
+    for match in _WORD_UNIT_MEASUREMENT_PATTERN.finditer(text):
+        if _overlaps_any(match.start(), match.end(), consumed):
+            continue
+        raw_num = match.group("num").strip()
+        unit_norm = _UNIT_CANONICAL_MAP.get(match.group("unit").lower())
+        if unit_norm is None:
+            continue
+        has_half = False
+        if raw_num.endswith("buçuk") or raw_num.endswith("bucuk"):
+            has_half = True
+            raw_num = re.sub(r"\s+bu[çc]uk$", "", raw_num).strip()
+        parsed_val = (
+            _parse_numeric_token(raw_num)
+            if re.match(r"^\d", raw_num)
+            else _parse_turkish_word_number(raw_num.split())
+        )
+        if parsed_val is None:
+            continue
+        if has_half:
+            parsed_val += Decimal("0.5")
+        measurements.append(
+            UnitMeasurement(
+                value=parsed_val,
+                unit=unit_norm,
+                raw_span=match.group(0),
+                start=match.start(),
+                end=match.end(),
+            )
+        )
+        consumed.append((match.start(), match.end()))
+
+    measurements.sort(key=lambda m: m.start)
     return measurements, consumed
 
 
@@ -307,6 +359,16 @@ def extract_price_and_units(norm: NormalizationResult) -> PriceExtractionResult:
             consumed.append(span)
             size_spans.add(span)
 
+    for age_match in _AGE_SIZE_PATTERN.finditer(text):
+        if not _overlaps_any(age_match.start(), age_match.end(), consumed):
+            span = (age_match.start(), age_match.end())
+            consumed.append(span)
+            size_spans.add(span)
+
+    for pct_match in _PERCENT_PATTERN.finditer(text):
+        if not _overlaps_any(pct_match.start(), pct_match.end(), consumed):
+            consumed.append((pct_match.start(), pct_match.end()))
+
     min_bound: Decimal | None = None
     max_bound: Decimal | None = None
     strict_lower = False
@@ -316,8 +378,17 @@ def extract_price_and_units(norm: NormalizationResult) -> PriceExtractionResult:
     warning_msg: str | None = None
     conflict_msg: str | None = None
 
-    neg_num_match = _NEGATIVE_PRICE_VALUE_PATTERN.search(text)
-    if neg_num_match:
+    # Ignore spaced hyphen inside valid bounds like '1500 - 3000 TL' when flagging negative prices
+    range_spans = [(m.start(), m.end()) for m in _RANGE_PRICE_PATTERN.finditer(text)]
+    for neg_num_match in _NEGATIVE_PRICE_VALUE_PATTERN.finditer(text):
+        if _overlaps_any(neg_num_match.start(), neg_num_match.end(), consumed):
+            continue
+        inside_valid_range = any(
+            r_start <= neg_num_match.start() and neg_num_match.end() <= r_end
+            for r_start, r_end in range_spans
+        )
+        if inside_valid_range:
+            continue
         return PriceExtractionResult(
             price=None,
             operator=None,
@@ -332,16 +403,21 @@ def extract_price_and_units(norm: NormalizationResult) -> PriceExtractionResult:
             conflict_message="Negatif fiyat sınırı geçerli değil.",
         )
 
-    # 1. Explicit dual range(s) e.g. '1500-3000', '20-30 bin', '1500 den 3000 e kadar'
+    # 1. Explicit dual range(s) e.g. '1500-3000', '20-30 bin', 'yirmi bin otuz bin arası'
     for range_match in _RANGE_PRICE_PATTERN.finditer(text):
         if _overlaps_any(range_match.start(), range_match.end(), consumed):
             continue
-        low_raw = range_match.group("low1") or range_match.group("low2")
-        high_raw = range_match.group("high1") or range_match.group("high2")
+        low_raw = (
+            range_match.group("low1") or range_match.group("low2") or range_match.group("low3")
+        )
+        high_raw = (
+            range_match.group("high1") or range_match.group("high2") or range_match.group("high3")
+        )
         if low_raw is None or high_raw is None:
             continue
-        low_val, low_bin = _parse_price_atom(low_raw)
-        high_val, high_bin = _parse_price_atom(high_raw)
+        has_tl_hint = bool(re.search(r"\b(?:tl|lira)\b", range_match.group(0)))
+        low_val, low_bin = _parse_price_atom(low_raw, has_currency_hint=has_tl_hint)
+        high_val, high_bin = _parse_price_atom(high_raw, has_currency_hint=has_tl_hint)
         if low_val is not None and high_val is not None:
             if (
                 high_bin
@@ -364,7 +440,10 @@ def extract_price_and_units(norm: NormalizationResult) -> PriceExtractionResult:
     for neg_lower in _DUAL_NEG_LOWER_PATTERN.finditer(text):
         if _overlaps_any(neg_lower.start(), neg_lower.end(), consumed):
             continue
-        val, _ = _parse_price_atom(neg_lower.group(1))
+        val, _ = _parse_price_atom(
+            neg_lower.group(1),
+            has_currency_hint=bool(re.search(r"\b(?:tl|lira)\b", neg_lower.group(0))),
+        )
         if val is not None:
             if min_bound is None or val > min_bound:
                 strict_lower = False
@@ -376,7 +455,10 @@ def extract_price_and_units(norm: NormalizationResult) -> PriceExtractionResult:
     for neg_upper in _DUAL_NEG_UPPER_PATTERN.finditer(text):
         if _overlaps_any(neg_upper.start(), neg_upper.end(), consumed):
             continue
-        val, _ = _parse_price_atom(neg_upper.group(1))
+        val, _ = _parse_price_atom(
+            neg_upper.group(1),
+            has_currency_hint=bool(re.search(r"\b(?:tl|lira)\b", neg_upper.group(0))),
+        )
         if val is not None:
             if max_bound is None or val < max_bound:
                 strict_upper = False
@@ -397,7 +479,10 @@ def extract_price_and_units(norm: NormalizationResult) -> PriceExtractionResult:
         )
         if raw_val is None:
             continue
-        val, _ = _parse_price_atom(raw_val)
+        val, _ = _parse_price_atom(
+            raw_val,
+            has_currency_hint=bool(re.search(r"\b(?:tl|lira|b[üu]t[çc]e)\b", upper.group(0))),
+        )
         if val is None:
             continue
         op_token = upper.group("op1") or ""
@@ -423,7 +508,10 @@ def extract_price_and_units(norm: NormalizationResult) -> PriceExtractionResult:
         raw_val = lower.group("val1") or lower.group("val2") or lower.group("val3")
         if raw_val is None:
             continue
-        val, _ = _parse_price_atom(raw_val)
+        val, _ = _parse_price_atom(
+            raw_val,
+            has_currency_hint=bool(re.search(r"\b(?:tl|lira)\b", lower.group(0))),
+        )
         if val is None:
             continue
         op_token = lower.group("op1") or ""

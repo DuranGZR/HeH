@@ -69,8 +69,13 @@ function finalizeEditedIntent(
   const hasRemainingCategory = nextCriteria.some(
     (crit) => crit.field === "category" && crit.operator !== "not_in",
   );
+  const nextIntentType =
+    nextCriteria.length > 0 && intent.intent_type === "unsupported"
+      ? "product_search"
+      : intent.intent_type;
   return {
     ...intent,
+    intent_type: nextIntentType,
     category_key: hasRemainingCategory ? intent.category_key : null,
     criteria: nextCriteria,
     logic_groups: pruneLogicGroups(nextGroups, activeIds),
@@ -144,6 +149,11 @@ export function removeOptionFromOrIntent(
       value: single.key,
       display_label: single.label,
       provenance: "user_edit",
+      required: true,
+      modality: "must",
+      source_span: null,
+      span_start: null,
+      span_end: null,
     };
     const nextCriteria = existingCriteria.map((c) => (c.id === criterionId ? updatedNode : c));
     // Strip criterionId from any singleton `any_of` group cleanly while preserving `all_of`.
@@ -166,6 +176,9 @@ export function removeOptionFromOrIntent(
     value: keptPairs.map((pair) => pair.key),
     display_label: keptPairs.map((pair) => pair.label).join(" veya "),
     provenance: "user_edit",
+    source_span: null,
+    span_start: null,
+    span_end: null,
   };
   const nextCriteria = existingCriteria.map((c) => (c.id === criterionId ? updatedNode : c));
   return finalizeEditedIntent(intent, nextCriteria, nextGroups);
@@ -222,12 +235,13 @@ export function updatePriceCriterionInIntent(
     currency: "TRY",
   };
 
+  const formatLabelNumber = (amt: string): string => amt.replace(".", ",");
   const displayLabel =
     minAmount !== null && maxAmount !== null
-      ? `${minAmount}-${maxAmount} TL`
+      ? `${formatLabelNumber(minAmount)}-${formatLabelNumber(maxAmount)} TL`
       : minAmount !== null
-        ? `${minAmount} TL üzeri`
-        : `${maxAmount} TL altı`;
+        ? `${formatLabelNumber(minAmount)} TL üzeri`
+        : `${formatLabelNumber(maxAmount ?? "0")} TL altı`;
 
   const updatedNode: SearchCriterionNodeOutput = {
     ...target,
@@ -235,6 +249,11 @@ export function updatePriceCriterionInIntent(
     value: priceValue as unknown as SearchCriterionNodeOutput["value"],
     display_label: displayLabel,
     provenance: "user_edit",
+    required: true,
+    modality: "must",
+    source_span: null,
+    span_start: null,
+    span_end: null,
   };
   const nextCriteria = existingCriteria.map((c) => (c.id === criterionId ? updatedNode : c));
   return finalizeEditedIntent(intent, nextCriteria, intent.logic_groups ?? []);
@@ -269,9 +288,11 @@ function buildPriceBoundsForNode(
   }
   const rawMin = node.value.min_amount ?? null;
   const rawMax = node.value.max_amount ?? null;
+  const minStr = rawMin !== null ? String(rawMin) : null;
+  const maxStr = rawMax !== null ? String(rawMax) : null;
   return {
-    minAmount: rawMin !== null && String(rawMin) !== "0" ? String(rawMin) : null,
-    maxAmount: rawMax !== null ? String(rawMax) : null,
+    minAmount: minStr !== null && (minStr !== "0" || node.operator === "between") ? minStr : null,
+    maxAmount: maxStr,
   };
 }
 

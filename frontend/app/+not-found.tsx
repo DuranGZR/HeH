@@ -47,7 +47,7 @@ export default function NotFoundScreen() {
               borderRadius: radius.md,
               borderWidth: borderWidth.hairline,
               borderColor: palette.borderControl,
-              backgroundColor: pressed ? palette.surfacePressed : palette.ctaBackground,
+              backgroundColor: pressed ? palette.ctaPressed : palette.ctaBackground,
               paddingHorizontal: spacing.lg,
             },
           ]}

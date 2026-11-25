@@ -10,9 +10,14 @@ from typing import Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-_CONTROL_CHAR_PATTERN = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\u200b-\u200f\ufeff]")
+_ZERO_WIDTH_PATTERN = re.compile(r"[\u200b-\u200f\u2060\ufeff]")
+_CONTROL_CHAR_PATTERN = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 _APOSTROPHE_VARIANTS = ("\u2019", "\u2018", "\u02bc", "`", "\u00b4")
 _HYPHEN_VARIANTS = ("\u2013", "\u2014", "\u2212")
+_ENGLISH_I_TOKEN_PATTERN = re.compile(
+    r"\b(IPHONE|IPAD|IPS|INTEL|NIKE|ADIDAS|XIAOMI|PHILIPS|MSI|GARMIN|LOGITECH|"
+    r"HISENSE|PANASONIC|COLUMBIA|ASICS|TIMBERLAND|SALOMON|BIRKENSTOCK|CROCS|MINI|WIFI|GIGABIT)\b"
+)
 
 AsrCategory = Literal["brand_phonetics", "numeric_currency", "size_units", "commerce_phrases"]
 
@@ -63,11 +68,12 @@ def _compiled_asr_rules() -> tuple[tuple[str, re.Pattern[str], str], ...]:
 
 
 _UNIT_FOLLOWS_LOOKAHEAD = (
-    r"(?!\s*(?:gb|tb|mb|mah|hz|in[çc]|kg|mm|cm|watt|w|mp|ml|saat|litre|lt|l)\b)"
+    r"(?!\s*(?:gb|tb|mb|mah|hz|in[çc]|inch|kg|kilogram|kilo|gram|gr|g|"
+    r"mm|cm|watt|vat|w|mp|ml|pa|db|saat|sa|litre|lt|l)\b)"
 )
 _ATTACHED_UNIT_MODEL_SKIP_RE = re.compile(
-    r"^\d+(?:[.,]\d+)?(?:gb|tb|mb|mah|hz|in[çc]|kg|kilogram|kilo|gram|gr|g|"
-    r"mm|cm|watt|w|mp|ml|pa|db|saat|litre|lt|l|bin[ie]?)$"
+    r"^\d+(?:[.,]\d+)?(?:gb|tb|mb|mah|hz|in[çc]|inch|kg|kilogram|kilo|gram|gr|g|"
+    r"mm|cm|watt|vat|w|mp|ml|pa|db|saat|sa|litre|lt|l|tl|lira|xs|xl|xxl|bin(?:den|de|in|[ie])?)$"
 )
 
 # Protected brand+model phrases and alphanumeric model tokens (numbers must not become price/size)
@@ -83,9 +89,9 @@ _PROTECTED_PHRASE_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(rf"\bredmi\s+(?:note\s+)?\d+{_UNIT_FOLLOWS_LOOKAHEAD}(?:\s*(?:pro|plus))?\b"),
     re.compile(rf"\bairpods\s*(?:pro|max|\d+{_UNIT_FOLLOWS_LOOKAHEAD})?\b"),
     re.compile(r"\bmacbook\s+(?:air|pro)?\s*m\d+\b"),
-    re.compile(r"\brtx\s*\d{4}\b"),
-    re.compile(r"\bgtx\s*\d{4}\b"),
-    re.compile(r"\bsony\s+wh-\d+[a-z0-9]*\b"),
+    re.compile(r"\brtx[-\s]?\d{4}\b"),
+    re.compile(r"\bgtx[-\s]?\d{4}\b"),
+    re.compile(r"\bsony\s+wh-\d+[a-z0-9-]*\b"),
 )
 
 _ALPHANUM_MODEL_PATTERN = re.compile(
@@ -98,9 +104,10 @@ _NUMBER_APOSTROPHE_PATTERN = re.compile(
 _CURRENCY_APOSTROPHE_PATTERN = re.compile(
     r"\b(tl|lira)'(nın|nin|nun|nün|ın|in|un|ün|ya|ye|a|e|da|de|ta|te|dan|den|tan|ten|yı|yi|yu|yü|ı|i|u|ü)\b"
 )
+_WORD_PRIVATIVE_APOSTROPHE_PATTERN = re.compile(r"\b([a-zçğıöşü]{2,})'(?:s[ıi]z|suz|s[üu]z)\b")
 _WORD_APOSTROPHE_PATTERN = re.compile(
-    r"\b([a-zçğıöşü]{2,})'(?:nın|nin|nun|nün|ın|in|un|ün|ya|yi|yu|yü|ı|i|u|ü|"
-    r"ya|ye|a|e|da|de|ta|te|nda|nde|ndan|nden|dan|den|tan|ten)\b"
+    r"\b([a-zçğıöşü]{2,})'(?:nın|nin|nun|nün|ın|in|un|ün|yla|yle|la|le|"
+    r"ya|yi|yu|yü|ı|i|u|ü|ye|a|e|da|de|ta|te|nda|nde|ndan|nden|dan|den|tan|ten)\b"
 )
 _CLAUSE_PUNCT_SPACING_PATTERN = re.compile(r"\s*((?<!\d),(?!\d)|[;!?()])\s*")
 _TERMINAL_DOT_PATTERN = re.compile(r"(?<!\d)\.(?!\d)")
@@ -138,9 +145,10 @@ class NormalizationResult:
 
 
 def turkish_lower(text: str) -> str:
-    """Apply Unicode NFC + Turkish locale lowercase (`İ -> i`, `I -> ı`)."""
+    """Apply Unicode NFC + Turkish locale lowercase (`İ -> i`, `I -> ı`) safely."""
     nfc = unicodedata.normalize("NFC", text)
-    folded = nfc.replace("\u0130", "i").replace("I", "ı").lower()
+    protected_english = _ENGLISH_I_TOKEN_PATTERN.sub(lambda match: match.group(0).lower(), nfc)
+    folded = protected_english.replace("\u0130", "i").replace("I", "ı").lower()
     # Clean residual combining dot above when lowercase engines turn İ into i + \u0307
     return folded.replace("i\u0307", "i")
 
@@ -148,7 +156,8 @@ def turkish_lower(text: str) -> str:
 def strip_control_and_unify_punctuation(text: str) -> str:
     """Remove invisible/control characters and normalize apostrophes/hyphens."""
     nfc = unicodedata.normalize("NFC", text)
-    cleaned = _CONTROL_CHAR_PATTERN.sub(" ", nfc)
+    without_zw = _ZERO_WIDTH_PATTERN.sub("", nfc)
+    cleaned = _CONTROL_CHAR_PATTERN.sub(" ", without_zw)
     for apo in _APOSTROPHE_VARIANTS:
         cleaned = cleaned.replace(apo, "'")
     for dash in _HYPHEN_VARIANTS:
@@ -194,7 +203,8 @@ def _strip_inflectional_apostrophes(text: str) -> str:
     # Keep number + currency suffix markers separated (`4500'e kadar`, `3000 TL'den ucuz`)
     step1 = _NUMBER_APOSTROPHE_PATTERN.sub(r"\1 \2", text)
     step2 = _CURRENCY_APOSTROPHE_PATTERN.sub(r"\1 \2", step1)
-    return _WORD_APOSTROPHE_PATTERN.sub(r"\1", step2)
+    step3 = _WORD_PRIVATIVE_APOSTROPHE_PATTERN.sub(r"\1 olmasın", step2)
+    return _WORD_APOSTROPHE_PATTERN.sub(r"\1", step3)
 
 
 def _strip_punctuation_for_matching(text: str) -> str:

@@ -15,14 +15,22 @@ from heh_api.infrastructure.nlp.rules.normalize import NormalizationResult
 EntityKind = Literal["category", "brand", "color", "size", "gender", "attribute"]
 
 _ACCESSORY_HEAD_NOUN_PATTERN = re.compile(
-    r"^\s+(?:[çc]anta(?:s[ıi]|lar[ıi]?)?|k[ıi]l[ıi]f(?:[ıi]|lar[ıi]?)?|kordon(?:u|lar[ıi]?)?|"
+    r"^\s+(?:(?:\d+[a-z0-9]*|[aszm]\d+|m\d+|pro|max|plus|ultra|mini|fe|air|"
+    r"s[ıi]rt|omuz|el|ekran|silikon|[şs]effaf|deri|koruma|ta[şs][ıi]ma)\s+)*"
+    r"(?:[çc]anta(?:s[ıi]|lar[ıi]?)?|k[ıi]l[ıi]f(?:[ıi]|lar[ıi]?)?|kordon(?:u|lar[ıi]?)?|"
     r"stant|stand[ıi]|boya(?:s[ıi])?|koruyucu(?:su)?|ask[ıi](?:s[ıi])?|"
     r"kutu(?:su)?|kablosu|adapt[öo]r[üu]?|[şs]arj(?:[ıi]|l[ıi])?\s+kablosu)\b"
+)
+_SKINCARE_CONTEXT_RE = re.compile(
+    r"\b(?:cilt|y[üu]z|g[üu]ne[şs]|el|nemlendirici|bak[ıi]m|gece|v[üu]cut|kremi)\b"
 )
 _GENDER_ALIAS_PATTERNS: tuple[tuple[str, str, re.Pattern[str]], ...] = (
     ("erkek", "Erkek", re.compile(r"(?<!\w)erkek(?:ler)?\b")),
     ("kadin", "Kadın", re.compile(r"(?<!\w)(?:kad[ıi]n(?:lar)?|bayan(?:lar)?)\b")),
     ("cocuk", "Çocuk", re.compile(r"(?<!\w)[çc]ocuk(?:lar)?\b")),
+)
+_GENDER_NEGATION_LOOKAHEAD_RE = re.compile(
+    r"^\s*(?:(?:de|da)\s+)?(?:olmas[ıi]n|olmayan|hari[çc](?:tir|t[ıi]r)?|d[ıi][şs][ıi]nda|istemiyorum|de[ğg]il)\b"
 )
 
 
@@ -111,11 +119,15 @@ def _select_best_category(
     categories: tuple[CategoryAliasConfig, ...],
     *,
     occupied: list[tuple[int, int]],
-    explicit_gender: str | None,
+    positive_hint_genders: set[str],
+    all_hint_genders: set[str],
 ) -> tuple[CategoryAliasConfig | None, tuple[int, int] | None]:
     best: tuple[int, bool, int, CategoryAliasConfig, tuple[int, int]] | None = None
     for cat in categories:
-        if cat.canonical_key == "erkek_mont" and explicit_gender in {"kadin", "cocuk"}:
+        if cat.canonical_key == "erkek_mont" and (
+            bool(positive_hint_genders & {"kadin", "cocuk"})
+            or ("erkek" in all_hint_genders and "erkek" not in positive_hint_genders)
+        ):
             continue
         for alias in cat.aliases:
             for match in _find_alias_matches(text, alias):
@@ -139,13 +151,13 @@ def _extract_clothing_sizes(
     category: CategoryAliasConfig | None,
 ) -> list[EntityMention]:
     mentions: list[EntityMention] = []
-    # Multi-letter sizes (`xs`, `xl`, `xxl`) match directly; single-letter (`s`, `m`, `l`)
-    # require explicit size context or apparel category so `1 l` / ordinary letters never collide.
+    # Multi-letter sizes (`xs`, `xl`, `xxl`, `small`, `medium`, `large`) match directly;
+    # single-letter aliases (`s`, `m`, `l`) require explicit size context or clothing category.
     for size_cfg in sorted(
         dictionary.clothing_sizes, key=lambda c: len(c.canonical_key), reverse=True
     ):
-        is_single_letter = len(size_cfg.canonical_key) == 1
         for alias in size_cfg.aliases:
+            is_single_letter_alias = len(alias) == 1
             explicit_pattern = re.compile(
                 rf"(?<!\w)({re.escape(alias)})\s+beden\b|\bbeden\s+({re.escape(alias)})(?!\w)"
             )
@@ -164,10 +176,10 @@ def _extract_clothing_sizes(
                     )
                 )
 
-            if is_single_letter and (category is None or category.size_system != "clothing"):
+            if is_single_letter_alias and (category is None or category.size_system != "clothing"):
                 continue
 
-            if not is_single_letter or (
+            if not is_single_letter_alias or (
                 category is not None and category.size_system == "clothing"
             ):
                 for match in _find_alias_matches(text, alias):
@@ -184,6 +196,30 @@ def _extract_clothing_sizes(
                         )
                     )
                     occupied.append((match.start(), match.end()))
+    return mentions
+
+
+def _extract_kids_age_sizes(
+    text: str,
+    occupied: list[tuple[int, int]],
+) -> list[EntityMention]:
+    mentions: list[EntityMention] = []
+    pattern = re.compile(r"(?<!\w)(\d{1,2})\s*-\s*(\d{1,2})\s*ya[şs]\b")
+    for match in pattern.finditer(text):
+        if _span_overlaps(match.start(), match.end(), occupied):
+            continue
+        occupied.append((match.start(), match.end()))
+        canonical = f"{match.group(1)}-{match.group(2)} yas"
+        mentions.append(
+            EntityMention(
+                kind="size",
+                canonical_key=canonical,
+                display_label=f"{match.group(1)}-{match.group(2)} Yaş",
+                start=match.start(),
+                end=match.end(),
+                raw_span=match.group(0),
+            )
+        )
     return mentions
 
 
@@ -258,16 +294,14 @@ def extract_entities_and_category(
     # Brands can co-trigger on category cues like 'iphone' or 'macbook'
     brand_occupied = list(non_model_consumed)
 
-    # Detect gender cues before category selection so women's/children's apparel
-    # never gets falsely locked onto Men's showcase category `erkek_mont` (`wg=2`).
-    explicit_gender: str | None = None
-    gender_mentions: list[EntityMention] = []
+    # Detect all gender cues in text order before category selection so women's/children's apparel
+    # or gender OR/negation never locks onto Men's showcase category `erkek_mont` (`wg=2`).
+    raw_gender_hits: list[EntityMention] = []
     for g_key, g_label, g_pat in _GENDER_ALIAS_PATTERNS:
         for g_match in g_pat.finditer(text):
             if _span_overlaps(g_match.start(), g_match.end(), occupied):
                 continue
-            explicit_gender = explicit_gender or g_key
-            gender_mentions.append(
+            raw_gender_hits.append(
                 EntityMention(
                     kind="gender",
                     canonical_key=g_key,
@@ -277,21 +311,32 @@ def extract_entities_and_category(
                     raw_span=g_match.group(0),
                 )
             )
-            break
+    raw_gender_hits.sort(key=lambda gm: gm.start)
+    gender_mentions: list[EntityMention] = []
+    gender_occupied = list(occupied)
+    for gm in raw_gender_hits:
+        if _span_overlaps(gm.start, gm.end, gender_occupied):
+            continue
+        gender_occupied.append((gm.start, gm.end))
+        gender_mentions.append(gm)
+
+    positive_hint_genders = {
+        gm.canonical_key
+        for gm in gender_mentions
+        if not _GENDER_NEGATION_LOOKAHEAD_RE.match(text[gm.end :])
+    }
+    all_hint_genders = {gm.canonical_key for gm in gender_mentions}
 
     category, category_span = _select_best_category(
         text,
         vocab.categories,
         occupied=occupied,
-        explicit_gender=explicit_gender,
+        positive_hint_genders=positive_hint_genders,
+        all_hint_genders=all_hint_genders,
     )
     mentions: list[EntityMention] = []
-    # Only emit gender explicitly when no showcase category already encodes it
+    # Only skip implied erkek on erkek_mont; keep kadin/cocuk even inside kadin_mont/cocuk_mont
     for gm in gender_mentions:
-        if category_span is not None and not (
-            gm.end <= category_span[0] or gm.start >= category_span[1]
-        ):
-            continue
         if (
             category is not None
             and category.canonical_key == "erkek_mont"
@@ -316,7 +361,9 @@ def extract_entities_and_category(
         occupied.append(category_span)
 
     # First check unambiguous colors excluding ambiguous 'mavi' until brand vs color resolves
-    matched_non_ambiguous_colors = 0
+    is_skincare_query = (
+        category is not None and category.canonical_key == "cilt_bakim_kremi"
+    ) or bool(_SKINCARE_CONTEXT_RE.search(text))
     for color_cfg in vocab.colors:
         if color_cfg.canonical_key == "mavi":
             continue
@@ -324,8 +371,13 @@ def extract_entities_and_category(
             for match in _find_alias_matches(text, alias):
                 if _span_overlaps(match.start(), match.end(), occupied):
                     continue
+                if (
+                    alias == "krem"
+                    and is_skincare_query
+                    and not re.match(r"^\s+renk(?:li)?\b|^\s+rengi", text[match.end() :])
+                ):
+                    continue
                 occupied.append((match.start(), match.end()))
-                matched_non_ambiguous_colors += 1
                 mentions.append(
                     EntityMention(
                         kind="color",
@@ -342,6 +394,7 @@ def extract_entities_and_category(
         (alias, brand_cfg) for brand_cfg in vocab.brands for alias in brand_cfg.aliases
     ]
     brand_candidates.sort(key=lambda pair: len(pair[0]), reverse=True)
+    matched_non_ambiguous_brand = False
 
     for alias, brand_cfg in brand_candidates:
         for match in _find_alias_matches(text, alias):
@@ -350,7 +403,11 @@ def extract_entities_and_category(
             if brand_cfg.color_ambiguous and alias == "mavi":
                 trailing = text[match.end() :]
                 leading = text[: match.start()]
-                is_explicit_color = bool(re.match(r"^\s+renk\b", trailing))
+                is_explicit_color = bool(re.match(r"^\s+(?:renk(?:li)?|rengi(?:nde)?)\b", trailing))
+                brand_or_bridge = bool(
+                    re.match(r"^\s*(?:veya|ya\s+da|yada|/)\s+", trailing)
+                    or re.search(r"\s+(?:veya|ya\s+da|yada|/)\s*$", leading)
+                )
                 color_or_bridge_after = bool(
                     re.match(
                         r"^\s*(?:veya|ya\s+da|/|de[ğg]il|ve|,)\s+(?:"
@@ -380,14 +437,22 @@ def extract_entities_and_category(
                 is_apparel_showcase = (
                     category is not None and category.canonical_key == "erkek_mont"
                 )
-                # Treat 'mavi' as color when adjacent to another color or explicit color cue
+                other_brand_cooccurs = (
+                    matched_non_ambiguous_brand
+                    and not brand_or_bridge
+                    and not re.match(r"^\s+marka\b", trailing)
+                )
+                # Treat 'mavi' as color when adjacent to a color, color cue, or other brand
                 if (
                     is_explicit_color
                     or color_or_bridge_after
                     or color_or_bridge_before
+                    or other_brand_cooccurs
                     or (not is_apparel_showcase and not re.match(r"^\s+marka\b", trailing))
                 ):
                     continue
+            if not brand_cfg.color_ambiguous:
+                matched_non_ambiguous_brand = True
             brand_span = (match.start(), match.end())
             brand_occupied.append(brand_span)
             occupied.append(brand_span)
@@ -425,6 +490,7 @@ def extract_entities_and_category(
     for sp in norm.protected_spans:
         size_occupied.append((sp.start, sp.end))
     mentions.extend(_extract_clothing_sizes(text, vocab, size_occupied, category=category))
+    mentions.extend(_extract_kids_age_sizes(text, size_occupied))
     mentions.extend(_extract_footwear_sizes(text, vocab, size_occupied, category=category))
 
     # Extract multiword attributes cleanly

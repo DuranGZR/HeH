@@ -42,13 +42,13 @@ export const ICON_SPECS: Readonly<Record<HehIconName, IconAccessibilitySpec>> = 
   mic: {
     name: "mic",
     strokeWidth: ICON_STROKE_WIDTH,
-    glyphFallback: "🎙",
+    glyphFallback: "◉",
     accessibilityLabel: "Mikrofon",
   },
   keyboard: {
     name: "keyboard",
     strokeWidth: ICON_STROKE_WIDTH,
-    glyphFallback: "⌨",
+    glyphFallback: "⊞",
     accessibilityLabel: "Klavye",
   },
   waveform: {
@@ -126,7 +126,7 @@ export const ICON_SPECS: Readonly<Record<HehIconName, IconAccessibilitySpec>> = 
   globe: {
     name: "globe",
     strokeWidth: ICON_STROKE_WIDTH,
-    glyphFallback: "🌐",
+    glyphFallback: "◎",
     accessibilityLabel: "Dil",
   },
   moon: {
@@ -138,13 +138,13 @@ export const ICON_SPECS: Readonly<Record<HehIconName, IconAccessibilitySpec>> = 
   trash: {
     name: "trash",
     strokeWidth: ICON_STROKE_WIDTH,
-    glyphFallback: "🗑",
+    glyphFallback: "⌫",
     accessibilityLabel: "Temizle",
   },
   bag: {
     name: "bag",
     strokeWidth: ICON_STROKE_WIDTH,
-    glyphFallback: "🛍",
+    glyphFallback: "▣",
     accessibilityLabel: "heh. alışveriş",
   },
 } as const;

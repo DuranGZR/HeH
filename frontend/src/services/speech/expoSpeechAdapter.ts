@@ -114,7 +114,10 @@ function matchesLocale(candidate: string, target: string): boolean {
 
 function loadOptionalNativeSpeechModule(): ExpoSpeechRecognitionNativeModule | null {
   try {
-    return requireOptionalNativeModule<ExpoSpeechRecognitionNativeModule>("ExpoSpeechRecognition");
+    return (
+      requireOptionalNativeModule<ExpoSpeechRecognitionNativeModule>("ExpoSpeechRecognition") ??
+      requireOptionalNativeModule<ExpoSpeechRecognitionNativeModule>("ExpoSpeechRecognitionModule")
+    );
   } catch {
     return null;
   }
@@ -243,7 +246,7 @@ export class ExpoSpeechRecognitionAdapter implements SpeechProvider {
       };
     }
     const services = mod.getSpeechRecognitionServices?.() ?? [];
-    const defaultPackage = mod.getDefaultRecognitionService?.().packageName ?? "";
+    const defaultPackage = mod.getDefaultRecognitionService?.()?.packageName ?? "";
     const selectedPackage =
       this.androidRecognitionServicePackage ??
       PREFERRED_ANDROID_PACKAGES.find((pkg) => services.includes(pkg)) ??
@@ -339,8 +342,8 @@ export class ExpoSpeechRecognitionAdapter implements SpeechProvider {
     });
 
     const resultSub = mod.addListener("result", (event) => {
-      const transcript = event.results[0]?.transcript ?? "";
-      if (event.isFinal) {
+      const transcript = event?.results?.[0]?.transcript ?? "";
+      if (event?.isFinal) {
         callbacks.onFinalResult(transcript);
       } else {
         callbacks.onPartialResult(transcript);
@@ -366,11 +369,11 @@ export class ExpoSpeechRecognitionAdapter implements SpeechProvider {
         return;
       }
       cleaned = true;
-      startSub.remove();
-      resultSub.remove();
-      noMatchSub.remove();
-      errorSub.remove();
-      endSub.remove();
+      startSub?.remove?.();
+      resultSub?.remove?.();
+      noMatchSub?.remove?.();
+      errorSub?.remove?.();
+      endSub?.remove?.();
     };
 
     try {

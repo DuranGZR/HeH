@@ -38,6 +38,8 @@ function containsDisallowedControlChar(value: string): boolean {
   return false;
 }
 
+const ZERO_WIDTH_REGEX = /[\u200b-\u200f\u2060\ufeff]/g;
+
 /** Validate query bounds, blank whitespace, and control-character hygiene cleanly client-side. */
 export function validateSearchQuery(rawQuery: string): SearchQueryValidationResult {
   if (containsDisallowedControlChar(rawQuery)) {
@@ -47,7 +49,7 @@ export function validateSearchQuery(rawQuery: string): SearchQueryValidationResu
       errorMessage: "Geçersiz karakter içeriyor; lütfen metni düzenle.",
     };
   }
-  const trimmed = rawQuery.trim();
+  const trimmed = rawQuery.replace(ZERO_WIDTH_REGEX, "").trim();
   if (trimmed.length === 0) {
     return {
       valid: false,

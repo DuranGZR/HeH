@@ -118,6 +118,7 @@ export function TextEntry({
           autoCapitalize="none"
           autoCorrect
           autoFocus={autoFocus}
+          blurOnSubmit
           maxLength={MAX_SEARCH_QUERY_LENGTH}
           multiline
           onBlur={() => setIsFocused(false)}

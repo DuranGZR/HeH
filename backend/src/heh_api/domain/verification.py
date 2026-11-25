@@ -217,6 +217,14 @@ class FacetFilterEvidence(BaseModel):
 
         has_url_param = bool(self.url_param and self.url_param.strip())
         has_url_values = len(self.url_values) > 0
+        if self.operator == "not_in" and (
+            self.status in {"FILTER_VERIFIED", "WEB_VERIFIED_PENDING_MOBILE"}
+            or self.web_selected is True
+            or self.mobile_app_selected is True
+        ):
+            raise ValueError("Negative not_in facet cannot claim active web/mobile verification")
+        if self.status in {"QUERY_ONLY", "UNKNOWN"} and self.web_selected is True:
+            raise ValueError(f"{self.status} facet cannot claim web_selected=True")
         if self.status == "UNSUPPORTED" and (self.web_selected is True or has_url_param):
             raise ValueError("UNSUPPORTED facet cannot claim active web_selected or url_param")
         _validate_promotion_gate(
@@ -301,7 +309,8 @@ class EvidenceMatrixDocument(BaseModel):
     records: list[UrlObservationRecord] = Field(min_length=1)
 
     @model_validator(mode="after")
-    def _validate_unique_ids(self) -> "EvidenceMatrixDocument":
+    def _validate_document(self) -> "EvidenceMatrixDocument":
+        datetime.fromisoformat(self.generated_at)
         seen: set[str] = set()
         for record in self.records:
             if record.id in seen:

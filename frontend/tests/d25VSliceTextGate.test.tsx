@@ -207,7 +207,7 @@ describe("D25 Gate-VSlice-Text — 20-Scenario End-to-End Text Vertical Slice", 
     await fireEvent.press(screen.getByTestId("price-apply-price-1"));
     expect(counts.parseCalls).toBe(1);
     expect(counts.resolveCalls).toBe(1);
-    expect(String(screen.getByTestId("vslice-url").props.children)).toContain("prc=1500-2500.50");
+    expect(String(screen.getByTestId("vslice-url").props.children)).toContain("prc=1500-2501");
 
     // Scenario 03: Lower-bound-only price edit ("2.000" min, empty max -> prc=2000-*)
     await fireEvent.press(screen.getByTestId("edit-price-price-1"));

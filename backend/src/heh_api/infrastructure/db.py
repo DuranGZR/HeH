@@ -3,6 +3,7 @@
 import logging
 import math
 from typing import Annotated, Literal
+from urllib.parse import parse_qs, urlparse
 
 import psycopg
 from fastapi import Depends
@@ -51,11 +52,16 @@ def check_database_health(
 
     try:
         dsn = normalize_postgres_dsn(database_url.get_secret_value())
+        existing_options = " ".join(parse_qs(urlparse(dsn).query).get("options", [])).strip()
+        timeout_option = f"-c statement_timeout={statement_timeout_ms}"
+        merged_options = (
+            f"{existing_options} {timeout_option}".strip() if existing_options else timeout_option
+        )
         with (
             psycopg.connect(
                 dsn,
                 connect_timeout=connect_timeout,
-                options=f"-c statement_timeout={statement_timeout_ms}",
+                options=merged_options,
             ) as connection,
             connection.cursor() as cursor,
         ):

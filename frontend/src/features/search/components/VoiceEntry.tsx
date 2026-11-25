@@ -132,6 +132,7 @@ export function VoiceEntry({
       <Listening
         isParsing={isParsing}
         onCancelListening={speech.cancelListening}
+        onDraftChange={setEditedTranscript}
         onRetryVoice={handleRetryVoice}
         onStopListening={speech.stopListening}
         onSubmitEditedTranscript={(nextText) => {

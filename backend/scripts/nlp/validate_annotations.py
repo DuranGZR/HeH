@@ -57,6 +57,14 @@ _PII_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("tr_iban", re.compile(r"\bTR\d{2}[0-9 ]{18,26}\b", re.IGNORECASE)),
     ("tckn_candidate", re.compile(r"(?<!\d)[1-9]\d{10}(?!\d)")),
     (
+        "card_candidate",
+        re.compile(r"(?<!\d)(?:\d{4}[\s-]?){3}\d{4}(?!\d)"),
+    ),
+    (
+        "ipv4_candidate",
+        re.compile(r"\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\b"),
+    ),
+    (
         "address_hint",
         re.compile(
             r"\b(?:mahalle(?:si)?|sokak|cadde(?:si)?|apartman[ıi]|daire\s*no)\b",
@@ -239,6 +247,9 @@ def _validate_single_record(
     seen_span_ids: set[str] = set()
     ordered_spans = sorted(record.spans, key=lambda sp: (sp.start, sp.end))
     prev_span: AnnotationSpanV1 | None = None
+    or_groups: dict[str, list[AnnotationSpanV1]] = {}
+    pos_keys: set[tuple[str, str]] = set()
+    neg_keys: set[tuple[str, str]] = set()
 
     for span in ordered_spans:
         if span.span_id in seen_span_ids:
@@ -271,6 +282,47 @@ def _validate_single_record(
                 f"[{span.start}:{span.end}]"
             )
         prev_span = span
+
+        if span.polarity == "negative":
+            neg_keys.add((span.field, span.canonical_value))
+            if not (span.relation_group and span.relation_group.startswith("not_")):
+                errors.append(
+                    f"Line {line_num} ({record.id}): negative span '{span.span_id}' must set "
+                    "relation_group starting with 'not_'"
+                )
+        else:
+            pos_keys.add((span.field, span.canonical_value))
+            if span.relation_group and span.relation_group.startswith("not_"):
+                errors.append(
+                    f"Line {line_num} ({record.id}): positive span '{span.span_id}' cannot use "
+                    f"relation_group '{span.relation_group}'"
+                )
+
+        if span.relation_group and span.relation_group.startswith("or_"):
+            or_groups.setdefault(span.relation_group, []).append(span)
+
+    for group_name, members in or_groups.items():
+        if len(members) < 2:
+            errors.append(
+                f"Line {line_num} ({record.id}): OR relation_group '{group_name}' "
+                "requires >= 2 spans"
+            )
+        if len({m.field for m in members}) > 1:
+            errors.append(
+                f"Line {line_num} ({record.id}): OR relation_group '{group_name}' "
+                "spans mixed fields"
+            )
+        if any(m.polarity != "positive" for m in members):
+            errors.append(
+                f"Line {line_num} ({record.id}): OR relation_group '{group_name}' "
+                "cannot mix polarity"
+            )
+
+    if (pos_keys & neg_keys) and not record.has_conflict:
+        errors.append(
+            f"Line {line_num} ({record.id}): contradictory positive+negative spans require "
+            "has_conflict=True"
+        )
 
     return errors
 

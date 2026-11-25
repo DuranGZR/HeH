@@ -276,7 +276,7 @@ def evaluate_golden(
     latencies_ms: list[float] = []
     client: TestClient | None = None
     if benchmark_http:
-        app = create_app(Settings(app_env="test", nlp_mode="rules"))
+        app = create_app(Settings(env="test", nlp_mode="rules"))
         client = TestClient(app)
         # Warmup single request so FastAPI lifespan/JSON serializer caches don't skew p95
         client.post(

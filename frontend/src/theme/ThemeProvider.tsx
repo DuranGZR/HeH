@@ -118,19 +118,54 @@ export interface HehThemeProviderProps extends PropsWithChildren {
   readonly initialReduceMotion?: boolean;
 }
 
+const THEME_STORAGE_KEY = "heh_theme_mode_v1";
+
+function readPersistedThemeMode(fallback: ThemeMode): ThemeMode {
+  try {
+    if (typeof globalThis.localStorage !== "undefined") {
+      const saved = globalThis.localStorage.getItem(THEME_STORAGE_KEY);
+      if (saved === "system" || saved === "light" || saved === "dark") {
+        return saved;
+      }
+    }
+  } catch {
+    // Ignore storage read restrictions on native/private contexts
+  }
+  return fallback;
+}
+
+function writePersistedThemeMode(nextMode: ThemeMode): void {
+  try {
+    if (typeof globalThis.localStorage !== "undefined") {
+      globalThis.localStorage.setItem(THEME_STORAGE_KEY, nextMode);
+    }
+  } catch {
+    // Ignore storage write errors cleanly
+  }
+}
+
 /**
  * Provides reactive monochrome Light/Dark palettes, responsive breakpoints,
  * and OS Reduce Motion settings across all screens.
  */
 export function HehThemeProvider({
   children,
-  initialMode = "system",
+  initialMode,
   initialReduceMotion,
 }: HehThemeProviderProps) {
   const osColorScheme = useColorScheme();
   const { width, height } = useWindowDimensions();
-  const [mode, setMode] = useState<ThemeMode>(initialMode);
+  const [mode, setModeState] = useState<ThemeMode>(() =>
+    initialMode !== undefined ? initialMode : readPersistedThemeMode("system"),
+  );
   const [reducedMotion, setReducedMotion] = useState<boolean>(initialReduceMotion ?? false);
+
+  const setMode = (nextMode: ThemeMode): void => {
+    setModeState(nextMode);
+    if (initialMode === undefined) {
+      writePersistedThemeMode(nextMode);
+    }
+  };
 
   useEffect(() => {
     if (initialReduceMotion !== undefined) {
@@ -156,7 +191,7 @@ export function HehThemeProvider({
 
     return () => {
       isMounted = false;
-      subscription.remove();
+      subscription?.remove?.();
     };
   }, [initialReduceMotion]);
 
@@ -164,7 +199,8 @@ export function HehThemeProvider({
 
   const value = useMemo(
     () => createThemeValue(mode, scheme, width, height, reducedMotion, setMode),
-    [mode, scheme, width, height, reducedMotion],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [mode, scheme, width, height, reducedMotion, initialMode],
   );
 
   return <HehThemeContext.Provider value={value}>{children}</HehThemeContext.Provider>;

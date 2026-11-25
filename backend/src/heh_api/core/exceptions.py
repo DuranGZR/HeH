@@ -76,7 +76,7 @@ def register_exception_handlers(application: FastAPI) -> None:
             field_path = ".".join(loc_parts) if loc_parts else "body"
             safe_details.append(
                 ApiErrorDetail(
-                    field=field_path[:80] or "body",
+                    field=_clamp_safe_text(field_path, max_len=80, fallback="body"),
                     reason=_clamp_safe_text(
                         str(err.get("msg", "Invalid field")),
                         max_len=240,
@@ -114,15 +114,12 @@ def register_exception_handlers(application: FastAPI) -> None:
         request: Request,
         exc: MappingVersionConflictError,
     ) -> JSONResponse:
+        del exc
         return _error_json_response(
             request=request,
             status_code=409,
             code="MAPPING_VERSION_CONFLICT",
-            message=_clamp_safe_text(
-                str(exc),
-                max_len=320,
-                fallback="Filtre sözlüğü güncellendi; lütfen aramayı yeniden çözümle.",
-            ),
+            message="Filtre sözlüğü güncellendi; lütfen aramayı yeniden çözümle.",
         )
 
     @application.exception_handler(StarletteHTTPException)
