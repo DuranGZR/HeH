@@ -1,5 +1,6 @@
 """Pure domain models for Turkish CQU SearchIntent v2 AST and safe LinkResolution."""
 
+import re
 import unicodedata
 from datetime import datetime
 from decimal import Decimal
@@ -35,10 +36,14 @@ ConfidenceState = Literal["high", "review_required", "abstain"]
 WarningLevel = Literal["none", "partial", "critical"]
 
 
+_CONTROL_WHITESPACE_RE = re.compile(r"[\x00-\x1f\x7f\u200b-\u200f\ufeff]")
+
+
 def normalize_display_query(raw: str) -> str:
-    """Normalize Unicode NFC and collapse whitespace while preserving Turkish casing."""
+    """Normalize Unicode NFC and strip invisible control characters cleanly."""
     nfc = unicodedata.normalize("NFC", raw)
-    return " ".join(nfc.strip().split())
+    cleaned = _CONTROL_WHITESPACE_RE.sub(" ", nfc)
+    return " ".join(cleaned.strip().split())
 
 
 def normalize_turkish_text(raw: str) -> str:

@@ -61,6 +61,35 @@ class SearchResolveRequest(BaseModel):
     mapping_version: str | None = Field(default=None, max_length=64)
     client_request_id: str | None = Field(default=None, max_length=64)
 
+    @field_validator("intent", mode="before")
+    @classmethod
+    def _prune_deleted_criteria_from_logic_groups(cls, raw_value: object) -> object:
+        if not isinstance(raw_value, dict):
+            return raw_value
+        raw_criteria = raw_value.get("criteria")
+        raw_groups = raw_value.get("logic_groups")
+        if not isinstance(raw_criteria, list | tuple) or not isinstance(raw_groups, list | tuple):
+            return raw_value
+
+        active_ids = {
+            crit["id"]
+            for crit in raw_criteria
+            if isinstance(crit, dict) and isinstance(crit.get("id"), str)
+        }
+        pruned_groups: list[object] = []
+        for group in raw_groups:
+            if not isinstance(group, dict):
+                pruned_groups.append(group)
+                continue
+            raw_ids = group.get("criterion_ids")
+            if not isinstance(raw_ids, list | tuple):
+                pruned_groups.append(group)
+                continue
+            kept_ids = [cid for cid in raw_ids if cid in active_ids]
+            if kept_ids:
+                pruned_groups.append({**group, "criterion_ids": kept_ids})
+        return {**raw_value, "logic_groups": pruned_groups}
+
 
 class SearchResolveResponse(BaseModel):
     """Recomputed Trendyol LinkResolution after user chip edits or deletions."""
