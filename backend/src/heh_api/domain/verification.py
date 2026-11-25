@@ -1,15 +1,24 @@
-"""Pure domain verification models for Trendyol URL and filter evidence."""
+"""Pure provider verification models, host/param allowlists, and expiry checks."""
 
 import re
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Final, Literal
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlparse
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 ALLOWED_PROVIDER_HOSTS: Final[frozenset[str]] = frozenset({"www.trendyol.com"})
+ALLOWED_TRENDYOL_QUERY_PARAMS: Final[frozenset[str]] = frozenset(
+    {"q", "wc", "wg", "wb", "wcl", "vr", "prc", "pi", "sst"}
+)
+ALLOWED_FACET_SEGMENT_PATTERN: Final[re.Pattern[str]] = re.compile(
+    r"^[bgcr](?:\d+)(?:-[bgcr]\d+)*$"
+)
+MAX_SHOWCASE_CATEGORIES: Final[int] = 8
+MIN_SHOWCASE_CATEGORIES: Final[int] = 5
 
-_FACET_PATH_PATTERN: Final[re.Pattern[str]] = re.compile(r"^/[a-z0-9-]+-x-[a-z0-9-]+$")
+_FACET_PATH_PATTERN: Final[re.Pattern[str]] = re.compile(r"^/([a-z0-9-]+)-x-([a-z0-9-]+)$")
 
 RouteStrategyKind = Literal["canonical_search_query", "verified_facet_path"]
 FacetFieldKind = Literal["brand", "color", "size", "category", "gender", "attribute"]
@@ -21,28 +30,69 @@ VerificationStatus = Literal[
     "UNSUPPORTED",
     "UNKNOWN",
 ]
+TestPlatformKind = Literal["web", "mobile"]
 
 
-def validate_provider_url(raw_url: str, route_strategy: RouteStrategyKind | None = None) -> str:
+def validate_provider_url(
+    raw_url: str,
+    route_strategy: RouteStrategyKind | None = None,
+    *,
+    enforce_allowlisted_params: bool = False,
+) -> str:
     """Validate that a provider URL is HTTPS, allowlisted, credential-free, and route-valid."""
+    if any(ch in raw_url for ch in ("\r", "\n", "\x00")):
+        raise ValueError("Provider URL contains forbidden control characters")
+
     parsed = urlparse(raw_url)
     if parsed.scheme.lower() != "https":
         raise ValueError(f"Provider URL must use https scheme: {raw_url}")
     if parsed.username is not None or parsed.password is not None:
         raise ValueError("Provider URL must not contain embedded credentials")
+    if parsed.port is not None:
+        raise ValueError("Provider URL must not specify custom ports")
 
     hostname = (parsed.hostname or "").lower().rstrip(".")
     if hostname not in ALLOWED_PROVIDER_HOSTS:
         raise ValueError(f"Host '{hostname}' is not in ALLOWED_PROVIDER_HOSTS")
 
+    if parsed.fragment:
+        raise ValueError("Provider URL must not contain fragments")
+
     if route_strategy == "canonical_search_query" and parsed.path != "/sr":
         raise ValueError(f"canonical_search_query URL must use /sr path, got '{parsed.path}'")
-    if route_strategy == "verified_facet_path" and not _FACET_PATH_PATTERN.match(parsed.path):
-        raise ValueError(
-            f"verified_facet_path URL must match '/<slug>-x-<codes>', got '{parsed.path}'"
-        )
+    if route_strategy == "verified_facet_path":
+        facet_match = _FACET_PATH_PATTERN.match(parsed.path)
+        if not facet_match:
+            raise ValueError(
+                f"verified_facet_path URL must match '/<slug>-x-<codes>', got '{parsed.path}'"
+            )
+        if not ALLOWED_FACET_SEGMENT_PATTERN.match(facet_match.group(2)):
+            raise ValueError(
+                f"verified_facet_path contains unverified -x- segment '{facet_match.group(2)}'"
+            )
+
+    if enforce_allowlisted_params and parsed.query:
+        for param_key, _ in parse_qsl(parsed.query, keep_blank_values=True):
+            if param_key not in ALLOWED_TRENDYOL_QUERY_PARAMS:
+                raise ValueError(
+                    f"Query parameter '{param_key}' is not in ALLOWED_TRENDYOL_QUERY_PARAMS"
+                )
 
     return raw_url
+
+
+def is_evidence_expired(
+    expires_at: datetime | None,
+    *,
+    now: datetime | None = None,
+) -> bool:
+    """Return True when an optional mapping expiry timestamp has elapsed."""
+    if expires_at is None:
+        return False
+    reference = now or datetime.now(UTC)
+    target = expires_at if expires_at.tzinfo is not None else expires_at.replace(tzinfo=UTC)
+    ref_utc = reference if reference.tzinfo is not None else reference.replace(tzinfo=UTC)
+    return target <= ref_utc
 
 
 def _ensure_non_empty_unique_tuple(values: tuple[str, ...], field_name: str) -> tuple[str, ...]:
@@ -85,6 +135,19 @@ def _validate_promotion_gate(
             )
         if not has_proof:
             raise ValueError(f"WEB_VERIFIED_PENDING_MOBILE {subject} requires {proof_desc}")
+
+
+class ShowcaseScopePolicy(BaseModel):
+    """Explicit provider scope contract capping showcase size and long-tail behavior."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    provider: Literal["trendyol"] = "trendyol"
+    min_showcase_categories: int = MIN_SHOWCASE_CATEGORIES
+    max_showcase_categories: int = MAX_SHOWCASE_CATEGORIES
+    long_tail_fallback: Literal["prc_plus_q"] = "prc_plus_q"
+    negative_exclusion_supported: Literal[False] = False
+    require_dual_platform_for_verified: Literal[True] = True
 
 
 class PriceBoundEvidence(BaseModel):

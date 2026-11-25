@@ -1,0 +1,317 @@
+{
+  "$defs": {
+    "FacetMappingEntry": {
+      "additionalProperties": false,
+      "description": "Single immutable provider parameter entry backed by repo evidence.",
+      "properties": {
+        "aliases": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Aliases",
+          "type": "array"
+        },
+        "canonical_key": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Canonical Key",
+          "type": "string"
+        },
+        "display_label": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Display Label",
+          "type": "string"
+        },
+        "evidence_ref": {
+          "maxLength": 160,
+          "minLength": 1,
+          "title": "Evidence Ref",
+          "type": "string"
+        },
+        "expires_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expires At"
+        },
+        "status": {
+          "enum": [
+            "FILTER_VERIFIED",
+            "WEB_VERIFIED_PENDING_MOBILE",
+            "QUERY_ONLY",
+            "UNSUPPORTED",
+            "UNKNOWN"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "url_param": {
+          "maxLength": 32,
+          "minLength": 1,
+          "title": "Url Param",
+          "type": "string"
+        },
+        "url_value": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Url Value",
+          "type": "string"
+        },
+        "verified_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Verified At"
+        },
+        "verified_platforms": {
+          "default": [
+            "web"
+          ],
+          "items": {
+            "enum": [
+              "web",
+              "mobile"
+            ],
+            "type": "string"
+          },
+          "title": "Verified Platforms",
+          "type": "array"
+        }
+      },
+      "required": [
+        "canonical_key",
+        "display_label",
+        "aliases",
+        "url_param",
+        "url_value",
+        "status",
+        "evidence_ref"
+      ],
+      "title": "FacetMappingEntry",
+      "type": "object"
+    },
+    "ShowcaseCategoryMapping": {
+      "additionalProperties": false,
+      "description": "Verified showcase category configuration inside the in-memory boot snapshot.",
+      "properties": {
+        "aliases": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Aliases",
+          "type": "array"
+        },
+        "brands": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/FacetMappingEntry"
+          },
+          "title": "Brands",
+          "type": "array"
+        },
+        "category_key": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Category Key",
+          "type": "string"
+        },
+        "category_status": {
+          "enum": [
+            "FILTER_VERIFIED",
+            "WEB_VERIFIED_PENDING_MOBILE",
+            "QUERY_ONLY",
+            "UNSUPPORTED",
+            "UNKNOWN"
+          ],
+          "title": "Category Status",
+          "type": "string"
+        },
+        "colors": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/FacetMappingEntry"
+          },
+          "title": "Colors",
+          "type": "array"
+        },
+        "display_name": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Display Name",
+          "type": "string"
+        },
+        "evidence_ref": {
+          "maxLength": 160,
+          "minLength": 1,
+          "title": "Evidence Ref",
+          "type": "string"
+        },
+        "expires_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expires At"
+        },
+        "gender_label": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gender Label"
+        },
+        "negative_supported": {
+          "const": false,
+          "default": false,
+          "title": "Negative Supported",
+          "type": "boolean"
+        },
+        "ontology_id": {
+          "maxLength": 96,
+          "minLength": 1,
+          "title": "Ontology Id",
+          "type": "string"
+        },
+        "sizes": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/FacetMappingEntry"
+          },
+          "title": "Sizes",
+          "type": "array"
+        },
+        "verified_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Verified At"
+        },
+        "verified_platforms": {
+          "default": [
+            "web"
+          ],
+          "items": {
+            "enum": [
+              "web",
+              "mobile"
+            ],
+            "type": "string"
+          },
+          "title": "Verified Platforms",
+          "type": "array"
+        },
+        "wc_id": {
+          "maxLength": 32,
+          "minLength": 1,
+          "title": "Wc Id",
+          "type": "string"
+        },
+        "wg_id": {
+          "anyOf": [
+            {
+              "maxLength": 32,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Wg Id"
+        }
+      },
+      "required": [
+        "category_key",
+        "ontology_id",
+        "display_name",
+        "aliases",
+        "wc_id",
+        "category_status",
+        "evidence_ref"
+      ],
+      "title": "ShowcaseCategoryMapping",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Immutable in-memory snapshot loaded once at API startup (Zero-DB hot path).",
+  "properties": {
+    "categories": {
+      "items": {
+        "$ref": "#/$defs/ShowcaseCategoryMapping"
+      },
+      "maxItems": 8,
+      "minItems": 5,
+      "title": "Categories",
+      "type": "array"
+    },
+    "global_colors": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/FacetMappingEntry"
+      },
+      "title": "Global Colors",
+      "type": "array"
+    },
+    "long_tail_policy": {
+      "const": "prc_plus_q",
+      "default": "prc_plus_q",
+      "title": "Long Tail Policy",
+      "type": "string"
+    },
+    "provider": {
+      "const": "trendyol",
+      "default": "trendyol",
+      "title": "Provider",
+      "type": "string"
+    },
+    "version": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "version",
+    "categories"
+  ],
+  "title": "MappingSnapshot",
+  "type": "object"
+}

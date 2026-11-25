@@ -1,15 +1,20 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useEffect, useState } from "react";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { TextSearchComposer } from "@/features/search";
+import {
+  CriteriaReviewPanel,
+  TextSearchComposer,
+  canSubmitSearchQuery,
+  useSearchFlow,
+} from "@/features/search";
 import { normalizeSearchModeParam } from "@/services/widgets/deepLink";
 import { useHehTheme } from "@/theme";
 
 /**
- * Search entry target route for widget deep links (`heh://search?mode=voice|text`)
- * and home screen transitions. Voice mode verifies foreground permission before listening.
+ * Search entry & 1-RTT review route (`heh://search?mode=voice|text`).
+ * Voice entry requires explicit foreground consent; text queries show editable CriteriaReview.
  */
 export default function SearchEntryScreen() {
   const router = useRouter();
@@ -18,20 +23,38 @@ export default function SearchEntryScreen() {
   const initialQuery = Array.isArray(params.q) ? (params.q[0] ?? "") : (params.q ?? "");
 
   const [queryText, setQueryText] = useState<string>(initialQuery);
-  const [submittedNote, setSubmittedNote] = useState<string | null>(null);
-
   const { palette, typography, spacing, radius, borderWidth, touchTarget, layout, icons, hitSlop } =
     useHehTheme();
 
+  const {
+    phase,
+    resolution,
+    chips,
+    summaryText,
+    ctaLabel,
+    errorMessage,
+    externalOpenError,
+    runParse,
+    removeCriterion,
+    openExternalResult,
+  } = useSearchFlow();
+
+  useEffect(() => {
+    if (mode === "text" && canSubmitSearchQuery(initialQuery)) {
+      void runParse(initialQuery, "text");
+    }
+  }, [initialQuery, mode, runParse]);
+
   const modeIcon = mode === "voice" ? icons.specs.mic : icons.specs.keyboard;
+  const isBusy = phase === "parsing" || phase === "resolving" || phase === "opening_external";
 
   return (
     <SafeAreaView
       style={[styles.screen, { backgroundColor: palette.background }]}
       testID="search-entry-screen"
     >
-      <View
-        style={[
+      <ScrollView
+        contentContainerStyle={[
           styles.frame,
           {
             maxWidth: layout.maxContentWidth,
@@ -40,6 +63,7 @@ export default function SearchEntryScreen() {
             gap: layout.sectionGap,
           },
         ]}
+        keyboardShouldPersistTaps="handled"
       >
         <Text
           maxFontSizeMultiplier={typography.wordmarkCompact.maxFontSizeMultiplier}
@@ -92,17 +116,29 @@ export default function SearchEntryScreen() {
 
         {mode === "text" ? (
           <TextSearchComposer
-            errorMessage={submittedNote}
-            onChangeQuery={(value) => {
-              setQueryText(value);
-              if (submittedNote) {
-                setSubmittedNote(null);
-              }
-            }}
+            errorMessage={errorMessage}
+            onChangeQuery={setQueryText}
             onSubmit={() => {
-              setSubmittedNote(`Sorgu hazır (${queryText.trim().length} karakter).`);
+              void runParse(queryText, "text");
             }}
             query={queryText}
+          />
+        ) : null}
+
+        {resolution && summaryText ? (
+          <CriteriaReviewPanel
+            chips={chips}
+            ctaLabel={ctaLabel}
+            externalOpenError={externalOpenError}
+            isBusy={isBusy}
+            onPressOpenExternal={() => {
+              void openExternalResult();
+            }}
+            onRemoveCriterion={(criterionId) => {
+              void removeCriterion(criterionId);
+            }}
+            resolution={resolution}
+            summaryText={summaryText}
           />
         ) : null}
 
@@ -132,7 +168,7 @@ export default function SearchEntryScreen() {
             Ana Ekrana Dön
           </Text>
         </Pressable>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -142,7 +178,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   frame: {
-    flex: 1,
+    flexGrow: 1,
     width: "100%",
     alignSelf: "center",
     justifyContent: "center",

@@ -10,11 +10,13 @@ from pathlib import Path
 from typing import Any
 
 from heh_api.core.config import Settings
+from heh_api.domain.mapping import MappingSnapshot
 from heh_api.main import create_app
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _DEFAULT_TS_TARGET = _REPO_ROOT / "frontend" / "src" / "api" / "generated.ts"
 _DEFAULT_OPENAPI_DOC = _REPO_ROOT / "docs" / "contracts" / "openapi.v1.json"
+_DEFAULT_MAPPING_SCHEMA = _REPO_ROOT / "backend" / "src" / "heh_api" / "mappings" / "schema.json"
 
 _SCHEMA_ORDER = (
     "LivenessResponse",
@@ -113,22 +115,28 @@ def render_typescript_contracts(openapi_schema: dict[str, Any]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-def build_contracts_bundle() -> tuple[str, str]:
-    """Generate deterministic OpenAPI JSON and TypeScript contract definitions."""
+def build_contracts_bundle() -> tuple[str, str, str]:
+    """Generate deterministic OpenAPI JSON, TypeScript contracts, and MappingSnapshot schema."""
     application = create_app(Settings(env="test"))
     openapi_schema = application.openapi()
     openapi_json = json.dumps(openapi_schema, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
     ts_source = render_typescript_contracts(openapi_schema)
-    return openapi_json, ts_source
+    mapping_schema_json = (
+        json.dumps(
+            MappingSnapshot.model_json_schema(), indent=2, sort_keys=True, ensure_ascii=False
+        )
+        + "\n"
+    )
+    return openapi_json, ts_source, mapping_schema_json
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Write or verify OpenAPI + TypeScript contract synchronization."""
-    parser = argparse.ArgumentParser(description="Generate/check HEH API contracts.")
+    """Write or verify OpenAPI + TypeScript + MappingSnapshot schema synchronization."""
+    parser = argparse.ArgumentParser(description="Generate/check HEH API and mapping contracts.")
     parser.add_argument(
         "--check",
         action="store_true",
-        help="Verify generated TypeScript contracts match FastAPI OpenAPI without modifying files.",
+        help="Verify generated TypeScript contracts and mapping schema without modifying files.",
     )
     parser.add_argument(
         "--write-docs",
@@ -137,7 +145,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    openapi_json, ts_source = build_contracts_bundle()
+    openapi_json, ts_source, mapping_schema_json = build_contracts_bundle()
 
     if args.check:
         if not _DEFAULT_TS_TARGET.is_file():
@@ -151,12 +159,26 @@ def main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
             return 1
-        print("[PASS] OpenAPI <-> TypeScript contract parity verified.")
+        if not _DEFAULT_MAPPING_SCHEMA.is_file():
+            print(f"[FAIL] Missing mapping JSON schema: {_DEFAULT_MAPPING_SCHEMA}", file=sys.stderr)
+            return 1
+        if _DEFAULT_MAPPING_SCHEMA.read_text(encoding="utf-8") != mapping_schema_json:
+            print(
+                "[FAIL] mappings/schema.json is out of sync with MappingSnapshot. "
+                "Run `uv run python scripts/generate_contracts.py` from backend/.",
+                file=sys.stderr,
+            )
+            return 1
+        print("[PASS] OpenAPI <-> TypeScript and MappingSnapshot schema parity verified.")
         return 0
 
     _DEFAULT_TS_TARGET.parent.mkdir(parents=True, exist_ok=True)
     _DEFAULT_TS_TARGET.write_text(ts_source, encoding="utf-8")
     print(f"[WROTE] {_DEFAULT_TS_TARGET}")
+
+    _DEFAULT_MAPPING_SCHEMA.parent.mkdir(parents=True, exist_ok=True)
+    _DEFAULT_MAPPING_SCHEMA.write_text(mapping_schema_json, encoding="utf-8")
+    print(f"[WROTE] {_DEFAULT_MAPPING_SCHEMA}")
 
     if args.write_docs:
         _DEFAULT_OPENAPI_DOC.parent.mkdir(parents=True, exist_ok=True)
