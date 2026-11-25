@@ -328,6 +328,11 @@ def _validate_single_record(
     return errors
 
 
+def read_canonical_lf_bytes(path: Path) -> bytes:
+    """Read UTF-8 text file bytes with normalized LF line endings across OSes."""
+    return path.read_bytes().replace(b"\r\n", b"\n")
+
+
 def validate_annotation_files(
     paths: Sequence[Path],
     *,
@@ -369,7 +374,7 @@ def validate_annotation_files(
     multiple_files = len(paths) > 1
 
     for path in paths:
-        raw_bytes = path.read_bytes()
+        raw_bytes = read_canonical_lf_bytes(path)
         if multiple_files:
             digest.update(path.name.encode("utf-8"))
             digest.update(b"\0")
@@ -534,6 +539,7 @@ def main(argv: list[str] | None = None) -> int:
         args.manifest.write_text(
             json.dumps(report.to_manifest_dict(), ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
+            newline="\n",
         )
 
     print(json.dumps(report.to_manifest_dict(), ensure_ascii=False, indent=2))

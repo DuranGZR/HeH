@@ -14,7 +14,11 @@ from pathlib import Path
 from typing import Any, Literal
 
 from heh_api.domain.search_intent import normalize_turkish_text
-from scripts.nlp.validate_annotations import AnnotationRecordV1, validate_annotation_files
+from scripts.nlp.validate_annotations import (
+    AnnotationRecordV1,
+    read_canonical_lf_bytes,
+    validate_annotation_files,
+)
 
 SplitName = Literal["train", "dev", "test"]
 
@@ -360,7 +364,7 @@ def build_splits_manifest(
 
     source_files: list[dict[str, Any]] = []
     for path in corpus_paths:
-        raw_bytes = path.read_bytes()
+        raw_bytes = read_canonical_lf_bytes(path)
         try:
             rel_path = path.resolve().relative_to(repo_root.resolve()).as_posix()
         except ValueError:
@@ -466,7 +470,7 @@ def load_split_records(
     source_paths: list[Path] = []
     for src in manifest["source_files"]:
         full = repo_root / src["path"]
-        actual_hash = hashlib.sha256(full.read_bytes()).hexdigest()
+        actual_hash = hashlib.sha256(read_canonical_lf_bytes(full)).hexdigest()
         if actual_hash != src["sha256"]:
             raise ValueError(
                 f"Source file hash mismatch for {src['path']}: "
@@ -531,6 +535,7 @@ def main(argv: list[str] | None = None) -> int:
     args.output.write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
+        newline="\n",
     )
     print(
         json.dumps(
