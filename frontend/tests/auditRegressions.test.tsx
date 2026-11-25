@@ -220,7 +220,8 @@ describe("D01-D20 frontend audit regressions", () => {
           JSON.stringify({
             provider: "trendyol",
             mapping_version: "1.0.0",
-            categories: [],
+            long_tail_policy: "prc_plus_q",
+            showcase_categories: [],
           }),
           { status: 200, headers: { "content-type": "application/json" } },
         );

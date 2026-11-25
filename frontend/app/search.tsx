@@ -43,6 +43,7 @@ export default function SearchEntryScreen() {
     phase,
     resolution,
     chips,
+    criteriaGroups,
     summaryText,
     ctaLabel,
     warnings,
@@ -51,8 +52,11 @@ export default function SearchEntryScreen() {
     canRestore,
     runParse,
     removeCriterion,
+    removeOrOption,
+    updatePriceRange,
     restoreLastRemoved,
     openExternalResult,
+    clearError,
   } = useSearchFlow();
 
   useEffect(() => {
@@ -64,8 +68,16 @@ export default function SearchEntryScreen() {
   const modeIcon = mode === "voice" ? icons.specs.mic : icons.specs.keyboard;
   const isBusy = phase === "parsing" || phase === "resolving" || phase === "opening_external";
 
+  const handleChangeQueryText = (nextText: string): void => {
+    setQueryText(nextText);
+    if (errorMessage) {
+      clearError();
+    }
+  };
+
   return (
     <SafeAreaView
+      edges={["top", "right", "bottom", "left"]}
       style={[styles.screen, { backgroundColor: palette.background }]}
       testID="search-entry-screen"
     >
@@ -83,6 +95,7 @@ export default function SearchEntryScreen() {
               gap: layout.sectionGap,
             },
           ]}
+          keyboardDismissMode="interactive"
           keyboardShouldPersistTaps="handled"
         >
           <Text
@@ -176,9 +189,13 @@ export default function SearchEntryScreen() {
             </View>
           ) : (
             <TextSearchComposer
-              errorMessage={errorMessage}
+              autoFocus={!initialQuery.trim()}
+              errorMessage={phase === "error" ? errorMessage : null}
               isBusy={isBusy}
-              onChangeQuery={setQueryText}
+              onChangeQuery={handleChangeQueryText}
+              onRetry={() => {
+                void runParse(queryText, "text");
+              }}
               onSubmit={() => {
                 void runParse(queryText, "text");
               }}
@@ -192,16 +209,25 @@ export default function SearchEntryScreen() {
               chips={chips}
               ctaLabel={ctaLabel}
               externalOpenError={externalOpenError}
+              groups={criteriaGroups}
               isBusy={isBusy}
+              isOpeningExternal={phase === "opening_external"}
               onPressOpenExternal={() => {
                 void openExternalResult();
               }}
               onRemoveCriterion={(criterionId) => {
                 void removeCriterion(criterionId);
               }}
+              onRemoveOrOption={(criterionId, optionKey) => {
+                void removeOrOption(criterionId, optionKey);
+              }}
               onRestoreLast={() => {
                 void restoreLastRemoved();
               }}
+              onUpdatePriceRange={(criterionId, minAmt, maxAmt) => {
+                void updatePriceRange(criterionId, minAmt, maxAmt);
+              }}
+              resolveError={phase === "reviewing" ? errorMessage : null}
               resolution={resolution}
               summaryText={summaryText}
               warnings={warnings}

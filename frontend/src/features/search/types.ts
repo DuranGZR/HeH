@@ -1,4 +1,4 @@
-/** Shared D07 UI state types and input validation helpers (zero NLP/URL logic). */
+/** Shared UI state types, Turkish prompt examples, and input validation helpers. */
 
 export type HomeInputMode = "voice" | "text";
 
@@ -12,6 +12,62 @@ export interface OverflowMenuItem {
 }
 
 export const MAX_SEARCH_QUERY_LENGTH = 500 as const;
+
+export const EXAMPLE_SEARCH_PROMPTS: readonly string[] = [
+  "3000 altı siyah M erkek mont",
+  "Sony veya JBL bluetooth kulaklık",
+  "2000 üstü 42 numara spor ayakkabı",
+  "Nike olmasın beyaz koşu ayakkabısı",
+] as const;
+
+export type SearchQueryValidationReason = "empty" | "control_chars" | "too_long";
+
+export interface SearchQueryValidationResult {
+  readonly valid: boolean;
+  readonly reason: SearchQueryValidationReason | null;
+  readonly errorMessage: string | null;
+}
+
+function containsDisallowedControlChar(value: string): boolean {
+  for (let i = 0; i < value.length; i += 1) {
+    const code = value.charCodeAt(i);
+    if ((code < 32 && code !== 9 && code !== 10 && code !== 13) || code === 127) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Validate query bounds, blank whitespace, and control-character hygiene cleanly client-side. */
+export function validateSearchQuery(rawQuery: string): SearchQueryValidationResult {
+  if (containsDisallowedControlChar(rawQuery)) {
+    return {
+      valid: false,
+      reason: "control_chars",
+      errorMessage: "Geçersiz karakter içeriyor; lütfen metni düzenle.",
+    };
+  }
+  const trimmed = rawQuery.trim();
+  if (trimmed.length === 0) {
+    return {
+      valid: false,
+      reason: "empty",
+      errorMessage: "Aramak için en az bir ürün veya ölçüt yaz.",
+    };
+  }
+  if (trimmed.length > MAX_SEARCH_QUERY_LENGTH) {
+    return {
+      valid: false,
+      reason: "too_long",
+      errorMessage: "En fazla 500 karakter yazabilirsin.",
+    };
+  }
+  return {
+    valid: true,
+    reason: null,
+    errorMessage: null,
+  };
+}
 
 export const OVERFLOW_MENU_ITEMS: readonly OverflowMenuItem[] = [
   {
@@ -40,8 +96,7 @@ export const OVERFLOW_MENU_ITEMS: readonly OverflowMenuItem[] = [
   },
 ] as const;
 
-/** Normalize surrounding whitespace and reject empty or over-limit search input. */
+/** Normalize surrounding whitespace and reject empty, control-char, or over-limit search input. */
 export function canSubmitSearchQuery(rawQuery: string): boolean {
-  const trimmed = rawQuery.trim();
-  return trimmed.length > 0 && trimmed.length <= MAX_SEARCH_QUERY_LENGTH;
+  return validateSearchQuery(rawQuery).valid;
 }

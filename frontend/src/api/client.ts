@@ -11,6 +11,33 @@ import type {
 
 const DEFAULT_API_BASE_URL = "http://127.0.0.1:8000";
 const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
+const SAFE_REQUEST_ID_STRIP_REGEX = /[^A-Za-z0-9_.-]/g;
+
+let clientRequestSequence = 0;
+
+/** Generate an HTTP-safe correlation ID (`<= 64` chars) compatible with backend `X-Request-ID`. */
+export function createClientRequestId(prefix = "heh"): string {
+  const safePrefix = prefix.replace(SAFE_REQUEST_ID_STRIP_REGEX, "") || "heh";
+  clientRequestSequence = (clientRequestSequence + 1) % 1_000_000;
+  const ts = Date.now().toString(36);
+  const rand = Math.random().toString(36).slice(2, 8);
+  return `${safePrefix}-${ts}-${clientRequestSequence}-${rand}`.slice(0, 64);
+}
+
+/** Return true if `error` represents an intentional request cancellation (`AbortError`). */
+export function isAbortError(error: unknown): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+  const maybeError = error as { name?: unknown; code?: unknown };
+  return maybeError.name === "AbortError" || maybeError.code === "ABORT_ERR";
+}
+
+function createAbortError(): Error {
+  const err = new Error("The operation was aborted.");
+  err.name = "AbortError";
+  return err;
+}
 
 export class HehApiError extends Error {
   public readonly status: number;
@@ -36,6 +63,17 @@ export class HehApiError extends Error {
 
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
+/** Shared transport abstraction satisfied by both live `HehApiClient` and offline mock fixtures. */
+export interface SearchApiTransport {
+  parseSearch(payload: SearchParseRequest, signal?: AbortSignal): Promise<SearchParseResponse>;
+  resolveSearch(
+    payload: SearchResolveRequest,
+    signal?: AbortSignal,
+  ): Promise<SearchResolveResponse>;
+  getCapabilities?(signal?: AbortSignal): Promise<ProviderCapabilitiesResponse>;
+  getHealthReady?(signal?: AbortSignal): Promise<ReadinessResponse>;
+}
+
 export interface HehApiClientOptions {
   readonly baseUrl?: string;
   readonly fetchImpl?: FetchLike;
@@ -46,7 +84,7 @@ export interface HehApiClientOptions {
  * Typed HTTP client generated directly from FastAPI OpenAPI contracts.
  * Mobile performs zero local URL construction or NLP rule evaluation.
  */
-export class HehApiClient {
+export class HehApiClient implements SearchApiTransport {
   private readonly baseUrl: string;
   private readonly fetchImpl: FetchLike;
   private readonly timeoutMs: number;
@@ -67,6 +105,7 @@ export class HehApiClient {
     return this.requestJson<ReadinessResponse>("/api/v1/health/ready", {
       method: "GET",
       signal,
+      requestPrefix: "ready",
     });
   }
 
@@ -74,6 +113,7 @@ export class HehApiClient {
     return this.requestJson<ProviderCapabilitiesResponse>("/api/v1/search/capabilities", {
       method: "GET",
       signal,
+      requestPrefix: "caps",
     });
   }
 
@@ -81,10 +121,16 @@ export class HehApiClient {
     payload: SearchParseRequest,
     signal?: AbortSignal,
   ): Promise<SearchParseResponse> {
+    const requestId = payload.client_request_id?.trim() || createClientRequestId("parse");
+    const enrichedPayload: SearchParseRequest = {
+      ...payload,
+      client_request_id: requestId,
+    };
     return this.requestJson<SearchParseResponse>("/api/v1/search/parse", {
       method: "POST",
-      body: JSON.stringify(payload),
+      body: JSON.stringify(enrichedPayload),
       signal,
+      requestId,
     });
   }
 
@@ -92,42 +138,90 @@ export class HehApiClient {
     payload: SearchResolveRequest,
     signal?: AbortSignal,
   ): Promise<SearchResolveResponse> {
+    const requestId = payload.client_request_id?.trim() || createClientRequestId("resolve");
+    const enrichedPayload: SearchResolveRequest = {
+      ...payload,
+      client_request_id: requestId,
+    };
     return this.requestJson<SearchResolveResponse>("/api/v1/search/resolve", {
       method: "POST",
-      body: JSON.stringify(payload),
+      body: JSON.stringify(enrichedPayload),
       signal,
+      requestId,
     });
   }
 
   private async requestJson<TResponse>(
     path: string,
-    init: { method: "GET" | "POST"; body?: string; signal?: AbortSignal },
+    init: {
+      method: "GET" | "POST";
+      body?: string;
+      signal?: AbortSignal;
+      requestId?: string;
+      requestPrefix?: string;
+    },
   ): Promise<TResponse> {
-    const timeoutController = !init.signal ? new AbortController() : null;
-    const timer =
-      timeoutController !== null
-        ? setTimeout(() => timeoutController.abort(), this.timeoutMs)
-        : null;
+    if (init.signal?.aborted) {
+      throw createAbortError();
+    }
+
+    const requestId = init.requestId ?? createClientRequestId(init.requestPrefix ?? "req");
+    // Keep external signal identity intact when passed while still enforcing timeout bounds.
+    const internalTimeoutController = !init.signal ? new AbortController() : null;
+    const effectiveSignal = init.signal ?? internalTimeoutController?.signal;
+
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let abortListener: (() => void) | null = null;
+
+    const timeoutPromise = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => {
+        internalTimeoutController?.abort();
+        reject(
+          new HehApiError({
+            status: 408,
+            code: "REQUEST_TIMEOUT",
+            message: "İstek zaman aşımına uğradı. Tekrar dene.",
+            requestId,
+          }),
+        );
+      }, this.timeoutMs);
+      const handle = timer as unknown as { unref?: () => void };
+      handle.unref?.();
+
+      if (init.signal) {
+        abortListener = () => {
+          reject(createAbortError());
+        };
+        init.signal.addEventListener("abort", abortListener, { once: true });
+      }
+    });
 
     let response: Response;
     try {
-      response = await this.fetchImpl(`${this.baseUrl}${path}`, {
+      const fetchPromise = this.fetchImpl(`${this.baseUrl}${path}`, {
         method: init.method,
         headers: {
           Accept: "application/json",
+          "X-Request-ID": requestId,
           ...(init.body !== undefined ? { "Content-Type": "application/json" } : {}),
         },
         body: init.body,
-        signal: init.signal ?? timeoutController?.signal,
+        signal: effectiveSignal,
       });
+      // Prevent late unhandled rejections if abort/timeout settles Promise.race first.
+      fetchPromise.catch(() => undefined);
+      response = await Promise.race([fetchPromise, timeoutPromise]);
     } finally {
       if (timer !== null) {
         clearTimeout(timer);
       }
+      if (abortListener && init.signal) {
+        init.signal.removeEventListener("abort", abortListener);
+      }
     }
 
     if (!response.ok) {
-      throw await this.buildApiError(response);
+      throw await this.buildApiError(response, requestId);
     }
 
     try {
@@ -137,13 +231,13 @@ export class HehApiClient {
         status: response.status,
         code: "INVALID_JSON_RESPONSE",
         message: "Sunucudan geçersiz yanıt alındı.",
-        requestId: response.headers.get("x-request-id") ?? "unknown",
+        requestId: response.headers.get("x-request-id") ?? requestId,
       });
     }
   }
 
-  private async buildApiError(response: Response): Promise<HehApiError> {
-    const headerRequestId = response.headers.get("x-request-id") ?? "unknown";
+  private async buildApiError(response: Response, fallbackRequestId: string): Promise<HehApiError> {
+    const headerRequestId = response.headers.get("x-request-id") ?? fallbackRequestId;
     try {
       const payload = (await response.json()) as Partial<ApiErrorResponse>;
       if (payload.error) {
