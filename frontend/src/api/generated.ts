@@ -6,7 +6,7 @@ export interface LivenessResponse {
 }
 
 export interface ReadinessResponse {
-  readonly status: "ok";
+  readonly status: "ok" | "degraded";
   readonly version: string;
   readonly nlp_mode: "rules" | "shadow" | "hybrid";
   readonly mapping_snapshot: "bootstrap" | "ready";
@@ -33,18 +33,22 @@ export interface ApiErrorResponse {
 export interface PriceValueInput {
   readonly min_amount?: number | string | null;
   readonly max_amount?: number | string | null;
+  readonly min_inclusive?: boolean;
+  readonly max_inclusive?: boolean;
   readonly currency?: "TRY";
 }
 
 export interface PriceValueOutput {
   readonly min_amount?: string | null;
   readonly max_amount?: string | null;
+  readonly min_inclusive?: boolean;
+  readonly max_inclusive?: boolean;
   readonly currency?: "TRY";
 }
 
 export interface SearchCriterionNodeInput {
   readonly id: string;
-  readonly field: "category" | "brand" | "color" | "size" | "gender" | "price" | "attribute" | "sorting";
+  readonly field: "category" | "brand" | "color" | "size" | "gender" | "price" | "material" | "attribute" | "model" | "sorting";
   readonly operator: "eq" | "in" | "not_in" | "gte" | "lte" | "between";
   readonly value: string | readonly string[] | PriceValueInput;
   readonly display_label: string;
@@ -56,7 +60,7 @@ export interface SearchCriterionNodeInput {
 
 export interface SearchCriterionNodeOutput {
   readonly id: string;
-  readonly field: "category" | "brand" | "color" | "size" | "gender" | "price" | "attribute" | "sorting";
+  readonly field: "category" | "brand" | "color" | "size" | "gender" | "price" | "material" | "attribute" | "model" | "sorting";
   readonly operator: "eq" | "in" | "not_in" | "gte" | "lte" | "between";
   readonly value: string | readonly string[] | PriceValueOutput;
   readonly display_label: string;
@@ -95,7 +99,7 @@ export interface SearchIntentV2Output {
 
 export interface LinkFilterItem {
   readonly criterion_id: string;
-  readonly field: "category" | "brand" | "color" | "size" | "gender" | "price" | "attribute" | "sorting";
+  readonly field: "category" | "brand" | "color" | "size" | "gender" | "price" | "material" | "attribute" | "model" | "sorting";
   readonly label: string;
   readonly operator: "eq" | "in" | "not_in" | "gte" | "lte" | "between";
   readonly status: "FILTER_VERIFIED" | "WEB_VERIFIED_PENDING_MOBILE" | "QUERY_ONLY" | "UNSUPPORTED" | "UNKNOWN";

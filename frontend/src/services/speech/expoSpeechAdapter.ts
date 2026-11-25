@@ -51,6 +51,11 @@ function mapNativeErrorCode(code: ExpoSpeechRecognitionErrorCode): SpeechErrorCo
     case "no-speech":
     case "speech-timeout":
       return "EMPTY_TRANSCRIPT";
+    case "network":
+      return "NETWORK_ERROR";
+    case "busy":
+    case "too-many-requests":
+      return "BUSY_ERROR";
     case "interrupted":
       return "INTERRUPTED";
     case "aborted":
@@ -107,21 +112,28 @@ export class ExpoSpeechRecognitionAdapter implements SpeechAdapter {
       callbacks.onEnd();
     });
 
-    ExpoSpeechRecognitionModule.start({
-      lang: locale,
-      interimResults: true,
-      continuous: false,
-      addsPunctuation: true,
-      contextualStrings: TR_COMMERCE_CONTEXTUAL_STRINGS,
-    });
-
-    return () => {
+    const cleanup = (): void => {
       startSub.remove();
       resultSub.remove();
       noMatchSub.remove();
       errorSub.remove();
       endSub.remove();
     };
+
+    try {
+      ExpoSpeechRecognitionModule.start({
+        lang: locale,
+        interimResults: true,
+        continuous: false,
+        addsPunctuation: true,
+        contextualStrings: TR_COMMERCE_CONTEXTUAL_STRINGS,
+      });
+    } catch (err) {
+      cleanup();
+      throw err;
+    }
+
+    return cleanup;
   }
 
   public stopListening(): void {

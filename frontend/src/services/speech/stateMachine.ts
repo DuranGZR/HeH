@@ -202,32 +202,41 @@ export function speechStateReducer(
         errorMessage: null,
       };
 
-    case "ERROR":
+    case "ERROR": {
+      const resolvedMessage =
+        action.message && action.message.trim().length > 0
+          ? action.message
+          : SPEECH_RECOVERY_MESSAGES[action.code];
       if (action.code === "ALREADY_ACTIVE" && isSpeechSessionActive(state.status)) {
         return {
           ...state,
           errorCode: "ALREADY_ACTIVE",
-          errorMessage: action.message ?? SPEECH_RECOVERY_MESSAGES.ALREADY_ACTIVE,
+          errorMessage: resolvedMessage,
         };
       }
       return {
         ...state,
         status: "error",
         errorCode: action.code,
-        errorMessage: action.message ?? SPEECH_RECOVERY_MESSAGES[action.code],
+        errorMessage: resolvedMessage,
       };
+    }
   }
 }
 
-/** Coordinates an active STT session with single-session locking and background cleanup. */
+/** Coordinates an active STT session with single-session locking, timeout, and cleanup. */
 export class SpeechSessionController {
   private state: SpeechSessionState = createInitialSpeechState();
   private cleanupSubscriptions: (() => void) | null = null;
+  private sessionTimer: ReturnType<typeof setTimeout> | null = null;
+  private disposed = false;
+  private sessionSeq = 0;
   private readonly listeners = new Set<(state: SpeechSessionState) => void>();
 
   constructor(
     private readonly adapter: SpeechAdapter,
     private readonly locale: string = "tr-TR",
+    private readonly sessionTimeoutMs: number = 15_000,
   ) {}
 
   public getState(): SpeechSessionState {
@@ -242,6 +251,9 @@ export class SpeechSessionController {
   }
 
   public async start(): Promise<SpeechSessionState> {
+    if (this.disposed) {
+      return this.state;
+    }
     if (isSpeechSessionActive(this.state.status)) {
       this.dispatch({ type: "ERROR", code: "ALREADY_ACTIVE" });
       return this.state;
@@ -252,8 +264,30 @@ export class SpeechSessionController {
       return this.state;
     }
 
+    const activeSeq = ++this.sessionSeq;
     this.dispatch({ type: "PERMISSION_REQUESTED" });
-    const permission = await this.adapter.requestPermission();
+
+    let permission: SpeechPermissionResult;
+    try {
+      permission = await this.adapter.requestPermission();
+    } catch {
+      if (this.disposed || this.sessionSeq !== activeSeq) {
+        return this.state;
+      }
+      this.dispatch({ type: "ERROR", code: "PLATFORM_ERROR" });
+      return this.state;
+    }
+
+    // Enforce T-11 / AT-19: abort startup if user cancelled/backgrounded while waiting for OS dialog
+    if (
+      this.disposed ||
+      this.sessionSeq !== activeSeq ||
+      this.state.status === "cancelled" ||
+      this.state.status !== "permission_request"
+    ) {
+      return this.state;
+    }
+
     this.dispatch({ type: "PERMISSION_RESOLVED", result: permission });
 
     if (permission.status !== "granted") {
@@ -262,37 +296,48 @@ export class SpeechSessionController {
 
     this.dispatch({ type: "START_REQUESTED" });
     this.detachSubscriptions();
-    this.cleanupSubscriptions = this.adapter.startListening(this.locale, {
-      onStart: () => {
-        this.dispatch({ type: "SESSION_STARTED" });
-      },
-      onPartialResult: (transcript) => {
-        this.dispatch({ type: "PARTIAL_RESULT", transcript });
-      },
-      onFinalResult: (transcript) => {
-        this.detachSubscriptions();
-        this.dispatch({ type: "FINAL_RESULT", transcript });
-      },
-      onEmptyResult: () => {
-        this.detachSubscriptions();
-        this.dispatch({ type: "EMPTY_RESULT" });
-      },
-      onError: (code, message) => {
-        this.detachSubscriptions();
-        this.dispatch({ type: "ERROR", code, message });
-      },
-      onEnd: () => {
-        this.detachSubscriptions();
-        if (this.state.status === "stopping" || this.state.status === "listening") {
-          const fallbackText = this.state.partialTranscript.trim();
-          if (fallbackText) {
-            this.dispatch({ type: "FINAL_RESULT", transcript: fallbackText });
-          } else {
-            this.dispatch({ type: "EMPTY_RESULT" });
+    this.armSessionTimeout(activeSeq);
+
+    try {
+      this.cleanupSubscriptions = this.adapter.startListening(this.locale, {
+        onStart: () => {
+          this.dispatch({ type: "SESSION_STARTED" });
+        },
+        onPartialResult: (transcript) => {
+          this.dispatch({ type: "PARTIAL_RESULT", transcript });
+        },
+        onFinalResult: (transcript) => {
+          this.detachSubscriptions();
+          this.dispatch({ type: "FINAL_RESULT", transcript });
+        },
+        onEmptyResult: () => {
+          this.detachSubscriptions();
+          this.dispatch({ type: "EMPTY_RESULT" });
+        },
+        onError: (code, message) => {
+          this.detachSubscriptions();
+          if (code === "ABORTED") {
+            this.dispatch({ type: "CANCELLED" });
+            return;
           }
-        }
-      },
-    });
+          this.dispatch({ type: "ERROR", code, message });
+        },
+        onEnd: () => {
+          this.detachSubscriptions();
+          if (this.state.status === "stopping" || this.state.status === "listening") {
+            const fallbackText = this.state.partialTranscript.trim();
+            if (fallbackText) {
+              this.dispatch({ type: "FINAL_RESULT", transcript: fallbackText });
+            } else {
+              this.dispatch({ type: "EMPTY_RESULT" });
+            }
+          }
+        },
+      });
+    } catch {
+      this.detachSubscriptions();
+      this.dispatch({ type: "ERROR", code: "PLATFORM_ERROR" });
+    }
 
     return this.state;
   }
@@ -302,16 +347,38 @@ export class SpeechSessionController {
       return;
     }
     this.dispatch({ type: "STOP_REQUESTED" });
-    this.adapter.stopListening();
+    try {
+      this.adapter.stopListening();
+    } catch {
+      this.detachSubscriptions();
+      this.dispatch({ type: "ERROR", code: "PLATFORM_ERROR" });
+    }
   }
 
   public cancel(): void {
     if (!isSpeechSessionActive(this.state.status)) {
       return;
     }
+    this.sessionSeq += 1;
     this.detachSubscriptions();
-    this.adapter.abortListening();
-    this.dispatch({ type: "CANCELLED" });
+    try {
+      this.adapter.abortListening();
+    } finally {
+      this.dispatch({ type: "CANCELLED" });
+    }
+  }
+
+  public reset(): void {
+    this.sessionSeq += 1;
+    this.detachSubscriptions();
+    if (isSpeechSessionActive(this.state.status)) {
+      try {
+        this.adapter.abortListening();
+      } catch {
+        // Ignore teardown failures on reset
+      }
+    }
+    this.dispatch({ type: "RESET" });
   }
 
   /** Enforce AT-19 / T-11: never keep microphone active when app leaves foreground. */
@@ -320,11 +387,42 @@ export class SpeechSessionController {
   }
 
   public dispose(): void {
+    this.disposed = true;
     this.cancel();
+    this.clearSessionTimeout();
     this.listeners.clear();
   }
 
+  private armSessionTimeout(seq: number): void {
+    this.clearSessionTimeout();
+    if (this.sessionTimeoutMs <= 0) {
+      return;
+    }
+    this.sessionTimer = setTimeout(() => {
+      if (this.disposed || this.sessionSeq !== seq || !isSpeechSessionActive(this.state.status)) {
+        return;
+      }
+      this.detachSubscriptions();
+      try {
+        this.adapter.abortListening();
+      } catch {
+        // Best-effort abort on native timeout
+      }
+      this.dispatch({ type: "EMPTY_RESULT" });
+    }, this.sessionTimeoutMs);
+    const timerHandle = this.sessionTimer as unknown as { unref?: () => void };
+    timerHandle.unref?.();
+  }
+
+  private clearSessionTimeout(): void {
+    if (this.sessionTimer !== null) {
+      clearTimeout(this.sessionTimer);
+      this.sessionTimer = null;
+    }
+  }
+
   private detachSubscriptions(): void {
+    this.clearSessionTimeout();
     if (this.cleanupSubscriptions) {
       this.cleanupSubscriptions();
       this.cleanupSubscriptions = null;

@@ -11,7 +11,18 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from heh_api.infrastructure.nlp.rules.normalize import NormalizationResult
 
-EntityKind = Literal["category", "brand", "color", "size", "attribute"]
+EntityKind = Literal["category", "brand", "color", "size", "gender", "attribute"]
+
+_ACCESSORY_HEAD_NOUN_PATTERN = re.compile(
+    r"^\s+(?:[çc]anta(?:s[ıi]|lar[ıi]?)?|k[ıi]l[ıi]f(?:[ıi]|lar[ıi]?)?|kordon(?:u|lar[ıi]?)?|"
+    r"stant|stand[ıi]|boya(?:s[ıi])?|koruyucu(?:su)?|ask[ıi](?:s[ıi])?|"
+    r"kutu(?:su)?|kablosu|adapt[öo]r[üu]?|[şs]arj(?:[ıi]|l[ıi])?\s+kablosu)\b"
+)
+_GENDER_ALIAS_PATTERNS: tuple[tuple[str, str, re.Pattern[str]], ...] = (
+    ("erkek", "Erkek", re.compile(r"(?<!\w)erkek(?:ler)?\b")),
+    ("kadin", "Kadın", re.compile(r"(?<!\w)(?:kad[ıi]n(?:lar)?|bayan(?:lar)?)\b")),
+    ("cocuk", "Çocuk", re.compile(r"(?<!\w)[çc]ocuk(?:lar)?\b")),
+)
 
 
 class CategoryAliasConfig(BaseModel):
@@ -97,11 +108,20 @@ def _find_alias_matches(text: str, alias: str) -> list[re.Match[str]]:
 def _select_best_category(
     text: str,
     categories: tuple[CategoryAliasConfig, ...],
+    *,
+    occupied: list[tuple[int, int]],
+    explicit_gender: str | None,
 ) -> tuple[CategoryAliasConfig | None, tuple[int, int] | None]:
     best: tuple[int, bool, int, CategoryAliasConfig, tuple[int, int]] | None = None
     for cat in categories:
+        if cat.canonical_key == "erkek_mont" and explicit_gender in {"kadin", "cocuk"}:
+            continue
         for alias in cat.aliases:
             for match in _find_alias_matches(text, alias):
+                if _span_overlaps(match.start(), match.end(), occupied):
+                    continue
+                if _ACCESSORY_HEAD_NOUN_PATTERN.match(text[match.end() :]):
+                    continue
                 score = (len(alias), cat.showcase, -match.start())
                 if best is None or score > best[:3]:
                     best = (*score, cat, (match.start(), match.end()))
@@ -237,8 +257,48 @@ def extract_entities_and_category(
     # Brands can co-trigger on category cues like 'iphone' or 'macbook'
     brand_occupied = list(non_model_consumed)
 
-    category, category_span = _select_best_category(text, vocab.categories)
+    # Detect gender cues before category selection so women's/children's apparel
+    # never gets falsely locked onto Men's showcase category `erkek_mont` (`wg=2`).
+    explicit_gender: str | None = None
+    gender_mentions: list[EntityMention] = []
+    for g_key, g_label, g_pat in _GENDER_ALIAS_PATTERNS:
+        for g_match in g_pat.finditer(text):
+            if _span_overlaps(g_match.start(), g_match.end(), occupied):
+                continue
+            explicit_gender = explicit_gender or g_key
+            gender_mentions.append(
+                EntityMention(
+                    kind="gender",
+                    canonical_key=g_key,
+                    display_label=g_label,
+                    start=g_match.start(),
+                    end=g_match.end(),
+                    raw_span=g_match.group(0),
+                )
+            )
+            break
+
+    category, category_span = _select_best_category(
+        text,
+        vocab.categories,
+        occupied=occupied,
+        explicit_gender=explicit_gender,
+    )
     mentions: list[EntityMention] = []
+    # Only emit gender explicitly when no showcase category already encodes it
+    for gm in gender_mentions:
+        if category_span is not None and not (
+            gm.end <= category_span[0] or gm.start >= category_span[1]
+        ):
+            continue
+        if (
+            category is not None
+            and category.canonical_key == "erkek_mont"
+            and gm.canonical_key == "erkek"
+        ):
+            continue
+        mentions.append(gm)
+        occupied.append((gm.start, gm.end))
 
     if category is not None and category_span is not None:
         mentions.append(
@@ -288,13 +348,43 @@ def extract_entities_and_category(
                 continue
             if brand_cfg.color_ambiguous and alias == "mavi":
                 trailing = text[match.end() :]
+                leading = text[: match.start()]
                 is_explicit_color = bool(re.match(r"^\s+renk\b", trailing))
+                color_or_bridge_after = bool(
+                    re.match(
+                        r"^\s*(?:veya|ya\s+da|/|de[ğg]il|ve|,)\s+(?:"
+                        + "|".join(
+                            re.escape(al)
+                            for c in vocab.colors
+                            if c.canonical_key != "mavi"
+                            for al in c.aliases
+                        )
+                        + r")\b",
+                        trailing,
+                    )
+                )
+                color_or_bridge_before = bool(
+                    re.search(
+                        r"\b(?:"
+                        + "|".join(
+                            re.escape(al)
+                            for c in vocab.colors
+                            if c.canonical_key != "mavi"
+                            for al in c.aliases
+                        )
+                        + r")\s+(?:veya|ya\s+da|/|de[ğg]il|ve|,)\s*$",
+                        leading,
+                    )
+                )
                 is_apparel_showcase = (
                     category is not None and category.canonical_key == "erkek_mont"
                 )
-                # Classify 'mavi' as brand on explicit marka cue or apparel without 'mavi renk'
-                if is_explicit_color or (
-                    not is_apparel_showcase and not re.match(r"^\s+marka\b", trailing)
+                # Treat 'mavi' as color when adjacent to another color or explicit color cue
+                if (
+                    is_explicit_color
+                    or color_or_bridge_after
+                    or color_or_bridge_before
+                    or (not is_apparel_showcase and not re.match(r"^\s+marka\b", trailing))
                 ):
                     continue
             brand_span = (match.start(), match.end())

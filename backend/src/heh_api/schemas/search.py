@@ -76,6 +76,12 @@ class SearchResolveRequest(BaseModel):
             for crit in raw_criteria
             if isinstance(crit, dict) and isinstance(crit.get("id"), str)
         }
+        has_active_category = any(
+            isinstance(crit, dict)
+            and crit.get("field") == "category"
+            and crit.get("operator") != "not_in"
+            for crit in raw_criteria
+        )
         pruned_groups: list[object] = []
         for group in raw_groups:
             if not isinstance(group, dict):
@@ -88,7 +94,10 @@ class SearchResolveRequest(BaseModel):
             kept_ids = [cid for cid in raw_ids if cid in active_ids]
             if kept_ids:
                 pruned_groups.append({**group, "criterion_ids": kept_ids})
-        return {**raw_value, "logic_groups": pruned_groups}
+        updated: dict[str, object] = {**raw_value, "logic_groups": pruned_groups}
+        if not has_active_category:
+            updated["category_key"] = None
+        return updated
 
 
 class SearchResolveResponse(BaseModel):

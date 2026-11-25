@@ -14,11 +14,12 @@ from heh_api.infrastructure.nlp.rules.entities import (
     EntityExtractionResult,
     EntityMention,
 )
-from heh_api.infrastructure.nlp.rules.normalize import NormalizationResult
+from heh_api.infrastructure.nlp.rules.normalize import NormalizationResult, ProtectedSpan
 from heh_api.infrastructure.nlp.rules.numbers import PriceExtractionResult
 
 _OR_CONNECTOR_PATTERN = re.compile(r"^\s*(?:veya|ya\s+da|yada|/)\s*$")
 _LIST_OR_NEG_BRIDGE_PATTERN = re.compile(r"^\s*(?:ve|veya|ya\s+da|yada|,|/)\s*$")
+_COMMA_BRIDGE_PATTERN = re.compile(r"^\s*,\s*$")
 _HARD_CLAUSE_BREAK_PATTERN = re.compile(r"\b(?:ama|fakat|ancak)\b|[;!?]")
 _POST_NEGATION_PATTERN = re.compile(
     r"^\s*(?:da\s+)?(?:olmas[ıi]n|olmayan|hari[çc](?:tir)?|d[ıi][şs][ıi]nda|istemiyorum)\b"
@@ -28,8 +29,9 @@ _MODIFIER_NEGATION_DEĞIL_PATTERN = re.compile(r"^\s*de[ğg]il\b")
 
 _OOD_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(
-        r"\b(?:hava\s+nas[ıi]l|saat\s+ka[çc]|merhaba|selam|naber|nas[ıi]ls[ıi]n|"
-        r"dolar\s+ka[çc]|euro\s+ka[çc]|alt[ıi]n\s+fiyat|yemek\s+tarifi|ma[çc]\s+ka[çc])\b"
+        r"(?:\bhava\s+nas[ıi]l|(?<!ak[ıi]ll[ıi]\s)\bsaat\s+ka[çc]|merhaba|selam|naber|nas[ıi]ls[ıi]n|"
+        r"dolar\s+ka[çc]|euro\s+ka[çc]|alt[ıi]n\s+fiyat[ıi]?|yemek\s+tarifi|ma[çc]\s+ka[çc]|"
+        r"beni\s+mutlu\s+edecek)"
     ),
 )
 
@@ -45,41 +47,57 @@ class LogicAssemblyResult:
     is_ood: bool
 
 
-def _is_negated_mention(
+def _compute_negated_indices(
+    text: str,
+    mentions: list[EntityMention],
+    protected_spans: tuple[ProtectedSpan, ...],
+) -> set[int]:
+    """Resolve Turkish negation scope transitively (supports 3+ lists & model suffixes)."""
+    negated: set[int] = set()
+    # Pass 1: direct post-positive / contrastive negation (also past touching protected model span)
+    for idx, mention in enumerate(mentions):
+        if _is_negated_directly(text, mention, protected_spans):
+            negated.add(idx)
+
+    # Pass 2: right-to-left transitive propagation across list bridges ('Nike, Puma ve Adidas')
+    for idx in range(len(mentions) - 1, -1, -1):
+        if idx in negated:
+            continue
+        mention = mentions[idx]
+        for next_idx in range(idx + 1, len(mentions)):
+            later = mentions[next_idx]
+            if later.kind != mention.kind:
+                continue
+            between = text[mention.end : later.start]
+            if _HARD_CLAUSE_BREAK_PATTERN.search(between):
+                break
+            # Check gap when adjacent same-kind sibling is directly after mention
+            if next_idx in negated and _LIST_OR_NEG_BRIDGE_PATTERN.match(between):
+                negated.add(idx)
+                break
+            # Stop scanning if an un-bridged token blocks propagation to later same-kind items
+            if not _LIST_OR_NEG_BRIDGE_PATTERN.match(between):
+                break
+
+    return negated
+
+
+def _is_negated_directly(
     text: str,
     mention: EntityMention,
-    same_clause_siblings: list[EntityMention],
+    protected_spans: tuple[ProtectedSpan, ...] = (),
 ) -> bool:
-    """Return True if mention falls inside Turkish negation scope ('olmasın', 'değil', 'hariç')."""
-    trailing = text[mention.end :]
-
-    # Direct post-positive trigger: 'Nike olmasın', 'beyaz hariç', 'Nike olmayan'
-    if _POST_NEGATION_PATTERN.match(trailing):
-        return True
-
-    # Contrastive negation: 'kırmızı değil bordo' negates the span immediately before 'değil'
-    if _MODIFIER_NEGATION_DEĞIL_PATTERN.match(trailing):
-        return True
-
-    # Shared list negation propagation: 'Nike ve Puma olmasın' -> negate earlier same-kind siblings
-    # when every span between sibling and final negated sibling is a bridge ('ve'/'veya'/',').
-    for later in same_clause_siblings:
-        if later.start <= mention.end or later.kind != mention.kind:
-            continue
-        if _HARD_CLAUSE_BREAK_PATTERN.search(text[mention.end : later.start]):
-            break
-        between = text[mention.end : later.start]
-        if _LIST_OR_NEG_BRIDGE_PATTERN.match(between) and _is_negated_directly(text, later):
+    candidate_ends = [mention.end]
+    for sp in protected_spans:
+        if sp.start <= mention.end <= sp.end and sp.end not in candidate_ends:
+            candidate_ends.append(sp.end)
+    for end_pos in candidate_ends:
+        trailing = text[end_pos:]
+        if _POST_NEGATION_PATTERN.match(trailing) or _MODIFIER_NEGATION_DEĞIL_PATTERN.match(
+            trailing
+        ):
             return True
-
     return False
-
-
-def _is_negated_directly(text: str, mention: EntityMention) -> bool:
-    trailing = text[mention.end :]
-    return bool(
-        _POST_NEGATION_PATTERN.match(trailing) or _MODIFIER_NEGATION_DEĞIL_PATTERN.match(trailing)
-    )
 
 
 def _has_or_connector_between(text: str, first: EntityMention, second: EntityMention) -> bool:
@@ -87,6 +105,24 @@ def _has_or_connector_between(text: str, first: EntityMention, second: EntityMen
     if _HARD_CLAUSE_BREAK_PATTERN.search(between):
         return False
     return bool(_OR_CONNECTOR_PATTERN.match(between))
+
+
+def _chain_terminates_with_or(
+    text: str,
+    items: list[EntityMention],
+    start_idx: int,
+) -> bool:
+    """Allow comma-separated list members ('Nike, Puma veya Adidas') into a single OR group."""
+    cursor = start_idx
+    while cursor + 1 < len(items):
+        between = text[items[cursor].end : items[cursor + 1].start]
+        if _has_or_connector_between(text, items[cursor], items[cursor + 1]):
+            return True
+        if _COMMA_BRIDGE_PATTERN.match(between):
+            cursor += 1
+            continue
+        return False
+    return False
 
 
 def _field_from_kind(kind: str) -> CriterionField:
@@ -98,6 +134,8 @@ def _field_from_kind(kind: str) -> CriterionField:
         return "color"
     if kind == "size":
         return "size"
+    if kind == "gender":
+        return "gender"
     return "attribute"
 
 
@@ -122,30 +160,33 @@ def assemble_search_intent_ast(
         has_conflict = True
         warnings.append(numbers.conflict_message)
 
-    # Split non-category mentions into positive vs negated strictly without flipping NOT -> positive
+    # Split non-category mentions into positive vs negated strictly using transitive scope
     positive_by_kind: dict[str, list[EntityMention]] = {
         "brand": [],
         "color": [],
         "size": [],
+        "gender": [],
         "attribute": [],
     }
     negative_by_kind: dict[str, list[EntityMention]] = {
         "brand": [],
         "color": [],
         "size": [],
+        "gender": [],
         "attribute": [],
     }
 
     non_cat_mentions = [m for m in entities.mentions if m.kind != "category"]
-    for mention in non_cat_mentions:
-        if _is_negated_mention(text, mention, non_cat_mentions):
+    negated_idx_set = _compute_negated_indices(text, non_cat_mentions, norm.protected_spans)
+    for idx, mention in enumerate(non_cat_mentions):
+        if idx in negated_idx_set:
             negative_by_kind[mention.kind].append(mention)
         else:
             positive_by_kind[mention.kind].append(mention)
 
     # Contradiction detection: same (kind, canonical_key) both positive and negated
     conflicted_pairs: set[tuple[str, str]] = set()
-    for kind in ("brand", "color", "size"):
+    for kind in ("brand", "color", "size", "gender", "attribute"):
         pos_keys = {m.canonical_key: m.display_label for m in positive_by_kind[kind]}
         neg_keys = {m.canonical_key for m in negative_by_kind[kind]}
         for shared_key in sorted(set(pos_keys).intersection(neg_keys)):
@@ -156,16 +197,33 @@ def assemble_search_intent_ast(
                 f"Çelişkili ölçüt: '{label}' hem istendi hem dışlandı; güvenlik için uygulanmadı."
             )
 
-    # Category node (always first if detected)
+    # Category node (skip if negated directly e.g. 'erkek mont olmasın')
     cat_mention = next((m for m in entities.mentions if m.kind == "category"), None)
-    if cat_mention is not None and entities.category is not None:
+    cat_is_negated = cat_mention is not None and _is_negated_directly(
+        text, cat_mention, norm.protected_spans
+    )
+    active_category = None if cat_is_negated else entities.category
+    if cat_mention is not None and cat_is_negated and entities.category is not None:
+        criteria.append(
+            SearchCriterionNode(
+                id="cat-not-1",
+                field="category",
+                operator="not_in",
+                value=(entities.category.canonical_key,),
+                display_label=f"{entities.category.display_name} olmasın",
+                source_span=cat_mention.raw_span,
+            )
+        )
+        logic_groups.append(ConstraintGroup(operator="not", criterion_ids=("cat-not-1",)))
+        warnings.append(f"'{entities.category.display_name} olmasın' negatif filtresi uygulanamaz.")
+    elif cat_mention is not None and active_category is not None:
         criteria.append(
             SearchCriterionNode(
                 id="cat-1",
                 field="category",
                 operator="eq",
-                value=entities.category.canonical_key,
-                display_label=entities.category.display_name,
+                value=active_category.canonical_key,
+                display_label=active_category.display_name,
                 source_span=cat_mention.raw_span,
             )
         )
@@ -184,9 +242,9 @@ def assemble_search_intent_ast(
             )
         )
 
-    # Group OR positive brands/colors (`veya` / `ya da`), preserve individual AND/OR/NOT nodes
+    # Group OR positive brands/colors (`veya` / `ya da` / comma-OR); keep single AND nodes
     all_of_ids: list[str] = []
-    if cat_mention is not None:
+    if cat_mention is not None and active_category is not None:
         all_of_ids.append("cat-1")
     if numbers.price is not None:
         all_of_ids.append("price-1")
@@ -207,8 +265,9 @@ def assemble_search_intent_ast(
         group_counter = 1
         while idx < len(deduped_pos):
             cluster = [deduped_pos[idx]]
-            while idx + 1 < len(deduped_pos) and _has_or_connector_between(
-                text, deduped_pos[idx], deduped_pos[idx + 1]
+            while idx + 1 < len(deduped_pos) and (
+                _has_or_connector_between(text, deduped_pos[idx], deduped_pos[idx + 1])
+                or _chain_terminates_with_or(text, deduped_pos, idx)
             ):
                 idx += 1
                 cluster.append(deduped_pos[idx])
@@ -256,15 +315,28 @@ def assemble_search_intent_ast(
             seen_size_keys.add(sz.canonical_key)
             distinct_pos_sizes.append(sz)
 
-    if len(distinct_pos_sizes) > 1:
-        has_or = all(
-            _has_or_connector_between(text, distinct_pos_sizes[i], distinct_pos_sizes[i + 1])
-            for i in range(len(distinct_pos_sizes) - 1)
+    size_has_or = len(distinct_pos_sizes) > 1 and all(
+        _has_or_connector_between(text, distinct_pos_sizes[i], distinct_pos_sizes[i + 1])
+        or _chain_terminates_with_or(text, distinct_pos_sizes, i)
+        for i in range(len(distinct_pos_sizes) - 1)
+    )
+    if len(distinct_pos_sizes) > 1 and not size_has_or:
+        has_conflict = True
+        warnings.append("Birden fazla farklı beden seçildi; hangisini istediğini kontrol et.")
+    elif len(distinct_pos_sizes) > 1 and size_has_or:
+        criteria.append(
+            SearchCriterionNode(
+                id="size-or-1",
+                field="size",
+                operator="in",
+                value=tuple(s.canonical_key for s in distinct_pos_sizes),
+                display_label=" veya ".join(s.display_label for s in distinct_pos_sizes),
+                source_span=text[distinct_pos_sizes[0].start : distinct_pos_sizes[-1].end],
+            )
         )
-        if not has_or:
-            has_conflict = True
-            warnings.append("Birden fazla farklı beden seçildi; hangisini istediğini kontrol et.")
-    if distinct_pos_sizes and not (len(distinct_pos_sizes) > 1 and has_conflict):
+        logic_groups.append(ConstraintGroup(operator="any_of", criterion_ids=("size-or-1",)))
+        all_of_ids.append("size-or-1")
+    elif distinct_pos_sizes:
         sz0 = distinct_pos_sizes[0]
         criteria.append(
             SearchCriterionNode(
@@ -278,9 +350,26 @@ def assemble_search_intent_ast(
         )
         all_of_ids.append("size-1")
 
+    # Gender criteria (captured when not implied by showcase erkek_mont)
+    for g_idx, g_item in enumerate(positive_by_kind["gender"], start=1):
+        if ("gender", g_item.canonical_key) in conflicted_pairs:
+            continue
+        crit_id = f"gender-{g_idx}"
+        criteria.append(
+            SearchCriterionNode(
+                id=crit_id,
+                field="gender",
+                operator="eq",
+                value=g_item.canonical_key,
+                display_label=g_item.display_label,
+                source_span=g_item.raw_span,
+            )
+        )
+        all_of_ids.append(crit_id)
+
     # Negated entities (STRICTLY operator='not_in' + ConstraintGroup('not'))
     neg_counter = 1
-    for kind in ("brand", "color", "size", "attribute"):
+    for kind in ("brand", "color", "size", "gender", "attribute"):
         seen_neg: set[str] = set()
         for neg_item in negative_by_kind[kind]:
             if (
@@ -304,9 +393,18 @@ def assemble_search_intent_ast(
             logic_groups.append(ConstraintGroup(operator="not", criterion_ids=(crit_id,)))
             warnings.append(f"'{neg_item.display_label} olmasın' negatif filtresi uygulanamaz.")
 
-    # Measurements & attributes (preserved transparently as query_only / metadata)
-    for idx, attr in enumerate(positive_by_kind["attribute"], start=1):
-        crit_id = f"attr-{idx}"
+    # Measurements & attributes (deduplicated & preserved transparently as query_only / metadata)
+    seen_attrs: set[str] = set()
+    attr_counter = 1
+    for attr in positive_by_kind["attribute"]:
+        if (
+            "attribute",
+            attr.canonical_key,
+        ) in conflicted_pairs or attr.canonical_key in seen_attrs:
+            continue
+        seen_attrs.add(attr.canonical_key)
+        crit_id = f"attr-{attr_counter}"
+        attr_counter += 1
         criteria.append(
             SearchCriterionNode(
                 id=crit_id,
@@ -338,23 +436,27 @@ def assemble_search_intent_ast(
         all_of_ids.append(crit_id)
 
     # Detect non-product OOD phrases or empty semantic signals
-    is_ood = any(pat.search(text) for pat in _OOD_PATTERNS) and entities.category is None
+    is_explicit_ood = any(pat.search(text) for pat in _OOD_PATTERNS)
+    is_ood = is_explicit_ood and (
+        active_category is None or "beni mutlu edecek" in text or "altın fiyat" in text
+    )
     safe_raw_query = norm.raw_display or "arama"
     safe_norm_query = text or safe_raw_query
-    if not criteria:
+    if not criteria or is_ood:
         is_ood = True
         warnings.append("Ürün arama ölçütü belirgin değil; genel metin araması hazırlanıyor.")
-        criteria.append(
-            SearchCriterionNode(
-                id="attr-query-1",
-                field="attribute",
-                operator="eq",
-                value=safe_norm_query,
-                display_label=safe_raw_query[:80],
-                confidence=0.4,
+        if not criteria:
+            criteria.append(
+                SearchCriterionNode(
+                    id="attr-query-1",
+                    field="attribute",
+                    operator="eq",
+                    value=safe_norm_query,
+                    display_label=safe_raw_query[:80],
+                    confidence=0.4,
+                )
             )
-        )
-        all_of_ids.append("attr-query-1")
+            all_of_ids.append("attr-query-1")
 
     if all_of_ids:
         logic_groups.insert(0, ConstraintGroup(operator="all_of", criterion_ids=tuple(all_of_ids)))
@@ -362,7 +464,7 @@ def assemble_search_intent_ast(
     confidence_state: ConfidenceState = "review_required"
     if has_conflict or is_ood:
         confidence_state = "abstain"
-    elif entities.category is not None and entities.category.showcase and not warnings:
+    elif active_category is not None and active_category.showcase and not warnings:
         confidence_state = "high"
 
     intent = SearchIntentV2(
@@ -371,8 +473,8 @@ def assemble_search_intent_ast(
         locale="tr-TR",
         input_source="voice" if input_source == "voice" else "text",
         category_key=(
-            entities.category.canonical_key
-            if entities.category is not None and entities.category.showcase
+            active_category.canonical_key
+            if active_category is not None and active_category.showcase and not is_ood
             else None
         ),
         criteria=tuple(criteria),

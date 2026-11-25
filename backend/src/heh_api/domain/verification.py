@@ -33,6 +33,14 @@ VerificationStatus = Literal[
 TestPlatformKind = Literal["web", "mobile"]
 
 
+class UnsafeUrlConstructionError(ValueError):
+    """Raised when URL assembly violates host, scheme, param, or -x- segment allowlists."""
+
+
+class MappingVersionConflictError(ValueError):
+    """Raised when client edit request targets an outdated/mismatched snapshot version."""
+
+
 def validate_provider_url(
     raw_url: str,
     route_strategy: RouteStrategyKind | None = None,
@@ -40,41 +48,45 @@ def validate_provider_url(
     enforce_allowlisted_params: bool = False,
 ) -> str:
     """Validate that a provider URL is HTTPS, allowlisted, credential-free, and route-valid."""
-    if any(ch in raw_url for ch in ("\r", "\n", "\x00")):
-        raise ValueError("Provider URL contains forbidden control characters")
+    if any(ord(ch) < 32 or ord(ch) == 127 for ch in raw_url) or " " in raw_url:
+        raise UnsafeUrlConstructionError(
+            "Provider URL contains forbidden control characters or unescaped spaces"
+        )
 
     parsed = urlparse(raw_url)
     if parsed.scheme.lower() != "https":
-        raise ValueError(f"Provider URL must use https scheme: {raw_url}")
+        raise UnsafeUrlConstructionError(f"Provider URL must use https scheme: {raw_url}")
     if parsed.username is not None or parsed.password is not None:
-        raise ValueError("Provider URL must not contain embedded credentials")
+        raise UnsafeUrlConstructionError("Provider URL must not contain embedded credentials")
     if parsed.port is not None:
-        raise ValueError("Provider URL must not specify custom ports")
+        raise UnsafeUrlConstructionError("Provider URL must not specify custom ports")
 
     hostname = (parsed.hostname or "").lower().rstrip(".")
     if hostname not in ALLOWED_PROVIDER_HOSTS:
-        raise ValueError(f"Host '{hostname}' is not in ALLOWED_PROVIDER_HOSTS")
+        raise UnsafeUrlConstructionError(f"Host '{hostname}' is not in ALLOWED_PROVIDER_HOSTS")
 
     if parsed.fragment:
-        raise ValueError("Provider URL must not contain fragments")
+        raise UnsafeUrlConstructionError("Provider URL must not contain fragments")
 
     if route_strategy == "canonical_search_query" and parsed.path != "/sr":
-        raise ValueError(f"canonical_search_query URL must use /sr path, got '{parsed.path}'")
+        raise UnsafeUrlConstructionError(
+            f"canonical_search_query URL must use /sr path, got '{parsed.path}'"
+        )
     if route_strategy == "verified_facet_path":
         facet_match = _FACET_PATH_PATTERN.match(parsed.path)
         if not facet_match:
-            raise ValueError(
+            raise UnsafeUrlConstructionError(
                 f"verified_facet_path URL must match '/<slug>-x-<codes>', got '{parsed.path}'"
             )
         if not ALLOWED_FACET_SEGMENT_PATTERN.match(facet_match.group(2)):
-            raise ValueError(
+            raise UnsafeUrlConstructionError(
                 f"verified_facet_path contains unverified -x- segment '{facet_match.group(2)}'"
             )
 
     if enforce_allowlisted_params and parsed.query:
         for param_key, _ in parse_qsl(parsed.query, keep_blank_values=True):
             if param_key not in ALLOWED_TRENDYOL_QUERY_PARAMS:
-                raise ValueError(
+                raise UnsafeUrlConstructionError(
                     f"Query parameter '{param_key}' is not in ALLOWED_TRENDYOL_QUERY_PARAMS"
                 )
 
@@ -149,6 +161,12 @@ class ShowcaseScopePolicy(BaseModel):
     negative_exclusion_supported: Literal[False] = False
     require_dual_platform_for_verified: Literal[True] = True
 
+    @model_validator(mode="after")
+    def _validate_policy_bounds(self) -> "ShowcaseScopePolicy":
+        if self.min_showcase_categories > self.max_showcase_categories:
+            raise ValueError("min_showcase_categories cannot exceed max_showcase_categories")
+        return self
+
 
 class PriceBoundEvidence(BaseModel):
     """Typed monetary bounds observed in a Trendyol `prc` parameter."""
@@ -199,6 +217,8 @@ class FacetFilterEvidence(BaseModel):
 
         has_url_param = bool(self.url_param and self.url_param.strip())
         has_url_values = len(self.url_values) > 0
+        if self.status == "UNSUPPORTED" and (self.web_selected is True or has_url_param):
+            raise ValueError("UNSUPPORTED facet cannot claim active web_selected or url_param")
         _validate_promotion_gate(
             status=self.status,
             web_ok=self.web_selected,
@@ -231,9 +251,11 @@ class UrlObservationRecord(BaseModel):
 
     @model_validator(mode="after")
     def _validate_record(self) -> "UrlObservationRecord":
-        validate_provider_url(self.tested_url, self.route_strategy)
+        validate_provider_url(self.tested_url, self.route_strategy, enforce_allowlisted_params=True)
         if self.resolved_url is not None:
-            validate_provider_url(self.resolved_url)
+            validate_provider_url(self.resolved_url, enforce_allowlisted_params=True)
+        if self.tested_at is not None:
+            datetime.fromisoformat(self.tested_at)
 
         has_evidence = bool(self.evidence_ref and self.evidence_ref.strip())
         has_timestamp = bool(self.tested_at and self.tested_at.strip())

@@ -1,8 +1,10 @@
 """Zero-DB hot-path application service for 1-RTT M0 search parse and edit-only resolve."""
 
+from datetime import datetime
 from typing import Literal
 
 from heh_api.domain.mapping import MappingSnapshot
+from heh_api.domain.verification import MappingVersionConflictError, is_evidence_expired
 from heh_api.infrastructure.nlp.rules.adapter import RuleBasedQueryUnderstandingAdapter
 from heh_api.infrastructure.trendyol.url_builder import TrendyolURLBuilder
 from heh_api.schemas.search import (
@@ -47,7 +49,14 @@ def resolve_search_intent(
     request_id: str,
 ) -> SearchResolveResponse:
     """Recompute LinkResolution deterministically from edited SearchIntentV2 AST."""
-    resolution = _URL_BUILDER.build_resolution(request.intent, snapshot)
+    if request.mapping_version is not None and request.mapping_version != snapshot.version:
+        raise MappingVersionConflictError(
+            f"İstek mapping sürümü ({request.mapping_version}) güncel sunucu sürümüyle "
+            f"({snapshot.version}) eşleşmiyor."
+        )
+    resolution = _URL_BUILDER.build_resolution(
+        request.intent, snapshot, rebuild_query_from_criteria=True
+    )
     return SearchResolveResponse(
         request_id=request_id,
         intent=request.intent,
@@ -55,23 +64,32 @@ def resolve_search_intent(
     )
 
 
-def list_provider_capabilities(snapshot: MappingSnapshot) -> ProviderCapabilitiesResponse:
+def list_provider_capabilities(
+    snapshot: MappingSnapshot,
+    *,
+    now: datetime | None = None,
+) -> ProviderCapabilitiesResponse:
     """Return active showcase capabilities from the immutable boot snapshot."""
-    summaries = tuple(
-        CategoryCapabilitySummary(
-            category_key=cat.category_key,
-            display_name=cat.display_name,
-            status=cat.category_status,
-            supports_brand_or=len(cat.brands) > 1,
-            supports_color=len(cat.colors) > 0,
-            supports_size=len(cat.sizes) > 0,
-            negative_supported=cat.negative_supported,
+    summaries = []
+    for cat in snapshot.categories:
+        cat_expired = is_evidence_expired(cat.expires_at, now=now)
+        active_brands = [b for b in cat.brands if not is_evidence_expired(b.expires_at, now=now)]
+        active_colors = [c for c in cat.colors if not is_evidence_expired(c.expires_at, now=now)]
+        active_sizes = [s for s in cat.sizes if not is_evidence_expired(s.expires_at, now=now)]
+        summaries.append(
+            CategoryCapabilitySummary(
+                category_key=cat.category_key,
+                display_name=cat.display_name,
+                status="UNKNOWN" if cat_expired else cat.category_status,
+                supports_brand_or=not cat_expired and len(active_brands) > 1,
+                supports_color=not cat_expired and len(active_colors) > 0,
+                supports_size=not cat_expired and len(active_sizes) > 0,
+                negative_supported=cat.negative_supported,
+            )
         )
-        for cat in snapshot.categories
-    )
     return ProviderCapabilitiesResponse(
         provider=snapshot.provider,
         mapping_version=snapshot.version,
         long_tail_policy=snapshot.long_tail_policy,
-        showcase_categories=summaries,
+        showcase_categories=tuple(summaries),
     )

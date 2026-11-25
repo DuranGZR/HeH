@@ -13,9 +13,19 @@ from heh_api.core.logging import (
     set_request_id,
 )
 from heh_api.core.middleware import resolve_safe_request_id
+from heh_api.domain.verification import MappingVersionConflictError, UnsafeUrlConstructionError
 from heh_api.schemas.errors import ApiErrorBody, ApiErrorDetail, ApiErrorResponse
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _clamp_safe_text(raw: str, *, max_len: int, fallback: str) -> str:
+    cleaned = redact_sensitive_text(raw).strip()
+    if not cleaned:
+        return fallback
+    if len(cleaned) <= max_len:
+        return cleaned
+    return f"{cleaned[: max_len - 3].rstrip()}..."
 
 
 def _extract_request_id(request: Request) -> str:
@@ -66,9 +76,13 @@ def register_exception_handlers(application: FastAPI) -> None:
             field_path = ".".join(loc_parts) if loc_parts else "body"
             safe_details.append(
                 ApiErrorDetail(
-                    field=field_path,
-                    reason=redact_sensitive_text(str(err.get("msg", "Invalid field"))),
-                    code=str(err.get("type", "validation_error")),
+                    field=field_path[:80] or "body",
+                    reason=_clamp_safe_text(
+                        str(err.get("msg", "Invalid field")),
+                        max_len=240,
+                        fallback="Invalid field",
+                    ),
+                    code=str(err.get("type", "validation_error"))[:64] or "validation_error",
                 )
             )
         return _error_json_response(
@@ -77,6 +91,38 @@ def register_exception_handlers(application: FastAPI) -> None:
             code="VALIDATION_ERROR",
             message="İstek alanlarını kontrol et.",
             details=tuple(safe_details),
+        )
+
+    @application.exception_handler(UnsafeUrlConstructionError)
+    async def handle_unsafe_url_error(
+        request: Request,
+        exc: UnsafeUrlConstructionError,
+    ) -> JSONResponse:
+        return _error_json_response(
+            request=request,
+            status_code=422,
+            code="UNSAFE_URL_PARAMETERS",
+            message=_clamp_safe_text(
+                str(exc),
+                max_len=320,
+                fallback="Arama kriterleri güvenli bağlantı kurallarına uymuyor.",
+            ),
+        )
+
+    @application.exception_handler(MappingVersionConflictError)
+    async def handle_mapping_version_conflict(
+        request: Request,
+        exc: MappingVersionConflictError,
+    ) -> JSONResponse:
+        return _error_json_response(
+            request=request,
+            status_code=409,
+            code="MAPPING_VERSION_CONFLICT",
+            message=_clamp_safe_text(
+                str(exc),
+                max_len=320,
+                fallback="Filtre sözlüğü güncellendi; lütfen aramayı yeniden çözümle.",
+            ),
         )
 
     @application.exception_handler(StarletteHTTPException)
@@ -88,7 +134,11 @@ def register_exception_handlers(application: FastAPI) -> None:
             request=request,
             status_code=exc.status_code,
             code=f"HTTP_{exc.status_code}",
-            message=redact_sensitive_text(str(exc.detail)),
+            message=_clamp_safe_text(
+                str(exc.detail or ""),
+                max_len=320,
+                fallback="İstek işlenemedi.",
+            ),
         )
 
     @application.exception_handler(Exception)

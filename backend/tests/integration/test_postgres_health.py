@@ -25,3 +25,42 @@ def test_health_ready_reports_ok_against_live_postgres() -> None:
     payload = response.json()
     assert payload["status"] == "ok"
     assert payload["db_status"] == "ok"
+
+
+@pytest.mark.integration
+def test_search_endpoints_never_touch_postgres_even_when_db_dead(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify core search endpoints execute without DB calls even when Postgres is dead."""
+    import psycopg
+    from pydantic import SecretStr
+
+    connect_calls = 0
+
+    def spy_connect(*args: object, **kwargs: object) -> object:
+        nonlocal connect_calls
+        connect_calls += 1
+        raise psycopg.OperationalError("simulated unreachable PostgreSQL")
+
+    monkeypatch.setattr(psycopg, "connect", spy_connect)
+
+    dead_settings = Settings(
+        env="test",
+        database_url=SecretStr("postgresql://heh:dead@127.0.0.1:59999/heh"),
+    )
+    with TestClient(create_app(dead_settings)) as client:
+        parsed = client.post(
+            "/api/v1/search/parse", json={"text": "Nike siyah 3000 altı erkek mont"}
+        )
+        assert parsed.status_code == 200
+        resolved = client.post(
+            "/api/v1/search/resolve",
+            json={"intent": parsed.json()["intent"]},
+        )
+        assert resolved.status_code == 200
+        resolved_url = resolved.json()["resolution"]["url"]
+        assert "wc=118" in resolved_url
+        assert "wcl=14" in resolved_url
+        assert "prc=0-3000" in resolved_url
+
+    assert connect_calls == 0

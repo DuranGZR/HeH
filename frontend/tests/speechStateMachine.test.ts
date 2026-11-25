@@ -131,4 +131,78 @@ describe("SpeechSessionController & speechStateReducer", () => {
     expect(empty.errorCode).toBe("EMPTY_TRANSCRIPT");
     expect(empty.errorMessage).toBe(SPEECH_RECOVERY_MESSAGES.EMPTY_TRANSCRIPT);
   });
+
+  it("cancels cleanly if backgrounded while permission prompt is awaiting (AT-19)", async () => {
+    let resolvePermission!: (res: { status: "granted"; canAskAgain: boolean }) => void;
+    const startMock = jest.fn(() => jest.fn());
+    const controller = new SpeechSessionController({
+      isAvailable: () => true,
+      supportsOnDevice: () => true,
+      getPermission: async () => ({ status: "undetermined", canAskAgain: true }),
+      requestPermission: () =>
+        new Promise((resolve) => {
+          resolvePermission = resolve;
+        }),
+      startListening: startMock,
+      stopListening: jest.fn(),
+      abortListening: jest.fn(),
+    });
+
+    const startPromise = controller.start();
+    controller.handleAppBackground();
+    resolvePermission({ status: "granted", canAskAgain: true });
+    await startPromise;
+
+    expect(startMock).not.toHaveBeenCalled();
+    expect(controller.getState().status).toBe("cancelled");
+  });
+
+  it("maps BUSY_ERROR, NETWORK_ERROR, and silence watchdog cleanly with Turkish recovery", async () => {
+    jest.useFakeTimers();
+    try {
+      const abortMock = jest.fn();
+      const cleanupMock = jest.fn();
+      const errorSinks: Array<(code: "BUSY_ERROR" | "NETWORK_ERROR", message: string) => void> = [];
+      const controller = new SpeechSessionController(
+        {
+          isAvailable: () => true,
+          supportsOnDevice: () => true,
+          getPermission: async () => ({ status: "granted", canAskAgain: true }),
+          requestPermission: async () => ({ status: "granted", canAskAgain: true }),
+          startListening: (_locale, callbacks) => {
+            callbacks.onStart();
+            errorSinks.push((code, message) => callbacks.onError(code, message));
+            return cleanupMock;
+          },
+          stopListening: jest.fn(),
+          abortListening: abortMock,
+        },
+        "tr-TR",
+        50,
+      );
+
+      await controller.start();
+      expect(controller.getState().status).toBe("listening");
+
+      jest.advanceTimersByTime(60);
+      expect(abortMock).toHaveBeenCalledTimes(1);
+      expect(cleanupMock).toHaveBeenCalledTimes(1);
+      expect(controller.getState().status).toBe("error");
+      expect(controller.getState().errorCode).toBe("EMPTY_TRANSCRIPT");
+
+      await controller.start();
+      errorSinks[1]?.("BUSY_ERROR", "");
+      expect(controller.getState().status).toBe("error");
+      expect(controller.getState().errorCode).toBe("BUSY_ERROR");
+      expect(controller.getState().errorMessage).toBe(SPEECH_RECOVERY_MESSAGES.BUSY_ERROR);
+
+      await controller.start();
+      errorSinks[2]?.("NETWORK_ERROR", "");
+      expect(controller.getState().status).toBe("error");
+      expect(controller.getState().errorCode).toBe("NETWORK_ERROR");
+      expect(controller.getState().errorMessage).toBe(SPEECH_RECOVERY_MESSAGES.NETWORK_ERROR);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
 });

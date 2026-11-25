@@ -39,7 +39,7 @@ _UNIT_CANONICAL_MAP: dict[str, str] = {
 }
 
 _UNIT_MEASUREMENT_PATTERN = re.compile(
-    r"(?<!\w)(\d{1,3}(?:\.\d{3})+|\d+(?:[.,]\d+)?)\s*"
+    r"(?<!\w)(\d{1,3}(?:\.\d{3})+,\d+|\d{1,3}(?:\.\d{3})+|\d+(?:[.,]\d+)?)\s*"
     r"(gb|tb|mb|kg|kilogram|kilo|gram|gr|g|ml|litre|lt|l|cm|mm|in[çc]|pa|db|saat|watt|w|hz|mah|mp)\b"
 )
 
@@ -76,10 +76,10 @@ _WORD_TENS: dict[str, int] = {
     "doksan": 90,
 }
 
-_SCALE_WORDS = {"yüz": 100, "yuz": 100, "bin": 1000}
+_SCALE_WORDS = {"yüz": 100, "yuz": 100, "bin": 1000, "milyon": 1000000}
 
-_NUM_REGEX = r"(?:\d{1,3}(?:\.\d{3})+|\d+(?:[.,]\d+)?)"
-_MULTIPLIER_REGEX = r"(?:\s*(?:bin[ie]?(?:den|de|e|i)?))"
+_NUM_REGEX = r"(?:\d{1,3}(?:\.\d{3})+,\d+|\d{1,3}(?:\.\d{3})+|\d+(?:[.,]\d+)?)"
+_MULTIPLIER_REGEX = r"(?:\s*(?:bin[ie]?(?:den|de|e|i)?|milyon[au]?))"
 _NUMBER_WORD_SEQ = (
     r"(?:on|yirmi|otuz|k[ıi]rk|elli|altm[ıi][şs]|yetmi[şs]|seksen|doksan|"
     r"y[üu]z|bir|iki|[üu][çc]|d[öo]rt|be[şs]|alt[ıi]|yedi|sekiz|dokuz)"
@@ -88,28 +88,44 @@ _NUMBER_WORD_SEQ = (
 )
 _PRICE_ATOM_REGEX = (
     rf"(?:{_NUM_REGEX}(?:{_MULTIPLIER_REGEX})?"
-    rf"|{_NUMBER_WORD_SEQ}\s+bin(?:[ie]?(?:den|de|e|i)?)?(?:\s+{_NUMBER_WORD_SEQ})?"
-    rf"|{_NUMBER_WORD_SEQ}\s+y[üu]z)"
+    rf"|\b(?:{_NUMBER_WORD_SEQ}\s+)?(?:milyon|bin(?:[ie]?(?:den|de|e|i)?)?|y[üu]z)"
+    rf"(?:\s+{_NUMBER_WORD_SEQ})?)"
 )
 
+_NEGATIVE_PRICE_VALUE_PATTERN = re.compile(r"(?:^|\s)-\s*\d+(?:[.,]\d+)?\s*(?:tl|lira)\b")
 _RANGE_PRICE_PATTERN = re.compile(
-    rf"({_PRICE_ATOM_REGEX})(?:\s*(?:tl|lira))?\s*(?:-|ile)\s*"
-    rf"({_PRICE_ATOM_REGEX})(?:\s+aras[ıi])?(?:\s*(?:tl|lira))?"
+    rf"(?:"
+    rf"(?P<low1>{_PRICE_ATOM_REGEX})(?:\s*(?:tl|lira))?\s*(?:-|ile)\s*"
+    rf"(?P<high1>{_PRICE_ATOM_REGEX})(?:\s+aras[ıi])?(?:\s*(?:tl|lira))?"
+    rf"|(?P<low2>{_PRICE_ATOM_REGEX})(?:\s*(?:tl|lira))?(?:\s+(?:den|dan))\s+"
+    rf"(?P<high2>{_PRICE_ATOM_REGEX})(?:\s*(?:tl|lira))?(?:\s+(?:e|a|ye|ya))?\s*kadar\b"
+    rf")"
 )
 _DUAL_NEG_LOWER_PATTERN = re.compile(
-    rf"({_PRICE_ATOM_REGEX})\s*(?:tl|lira)?\s*(?:alt[ıi]\s*(?:da\s*)?olmas[ıi]n|den\s*az\s*olmas[ıi]n|dan\s*az\s*olmas[ıi]n)"
+    rf"({_PRICE_ATOM_REGEX})\s*(?:tl|lira)?(?:\s*(?:den|dan))?\s*"
+    rf"(?:alt[ıi](?:nda)?\s*(?:da\s*)?olmas[ıi]n|(?:den|dan)\s*az\s*olmas[ıi]n|az\s*olmas[ıi]n)"
+)
+_DUAL_NEG_UPPER_PATTERN = re.compile(
+    rf"({_PRICE_ATOM_REGEX})\s*(?:tl|lira)?(?:\s*(?:den|dan))?\s*"
+    rf"(?:[üu]st[üu](?:nde)?|üzeri(?:nde)?|(?:den\s*)?(?:fazla|y[üu]ksek|pahal[ıi])|"
+    rf"(?:dan\s*)?(?:fazla|y[üu]ksek|pahal[ıi]))\s*(?:da\s*)?(?:olmas[ıi]n|olmayan|istemiyorum)\b"
 )
 _UPPER_PRICE_PATTERN = re.compile(
     rf"(?:"
-    rf"(?P<val1>{_PRICE_ATOM_REGEX})\s*(?:tl|lira)?(?:\s*(?:ye|ya|e|a))?\s*(?P<op1>alt[ıi](?:nda)?|den\s*ucuz|dan\s*ucuz|den\s*az|dan\s*az|dan\s*d[üu][şs][üu]k|den\s*d[üu][şs][üu]k|ge[çc]mesin|kadar|alt[ıi])"
+    rf"(?P<val1>{_PRICE_ATOM_REGEX})\s*(?:tl|lira)?(?:\s*(?:nın|nin|nun|nün|in|ın|un|ün|ye|ya|yi|yı|yu|yü|e|a|i|ı|den|dan))?\s*"
+    rf"(?P<op1>alt[ıi](?:nda)?|(?:den\s*|dan\s*)?ucuz|(?:den\s*|dan\s*)?az|"
+    rf"(?:den\s*|dan\s*)?d[üu][şs][üu]k|ge[çc]mesin|kadar)\b"
     rf"|en\s+(?P<op2>fazla|[çc]ok)\s+(?P<val2>{_PRICE_ATOM_REGEX})(?:\s*(?:tl|lira))?"
-    rf"|maksimum\s+(?P<val3>{_PRICE_ATOM_REGEX})(?:\s*(?:tl|lira))?"
-    rf"|b[üu]t[çc]e\s+(?P<val4>{_PRICE_ATOM_REGEX})(?:\s*(?:tl|lira))?"
+    rf"|(?:maksimum|max)\s+(?P<val3>{_PRICE_ATOM_REGEX})(?:\s*(?:tl|lira))?"
+    rf"|b[üu]t[çc]e(?:m)?\s+(?P<val4>{_PRICE_ATOM_REGEX})(?:\s*(?:tl|lira))?"
+    rf"|(?P<val5>{_PRICE_ATOM_REGEX})\s*(?:tl|lira)?\s*b[üu]t[çc]e(?:m(?:\s+var)?)?"
     rf")"
 )
 _LOWER_PRICE_PATTERN = re.compile(
     rf"(?:"
-    rf"(?P<val1>{_PRICE_ATOM_REGEX})\s*(?:tl|lira)?\s*(?P<op1>[üu]st[üu](?:nde)?|üzeri(?:nde)?|den\s*y[üu]ksek|dan\s*y[üu]ksek|dan\s*pahalı|den\s*pahalı|den\s*fazla|dan\s*fazla)"
+    rf"(?P<val1>{_PRICE_ATOM_REGEX})\s*(?:tl|lira)?(?:\s*(?:nın|nin|nun|nün|in|ın|un|ün|den|dan))?\s*"
+    rf"(?P<op1>[üu]st[üu](?:nde)?|üzeri(?:nde)?|(?:den\s*|dan\s*)?y[üu]ksek|"
+    rf"(?:den\s*|dan\s*)?pahal[ıi]|(?:den\s*|dan\s*)?fazla)\b"
     rf"|en\s+az\s+(?P<val2>{_PRICE_ATOM_REGEX})(?:\s*(?:tl|lira))?"
     rf"|minimum\s+(?P<val3>{_PRICE_ATOM_REGEX})(?:\s*(?:tl|lira))?"
     rf")"
@@ -198,10 +214,21 @@ def _parse_turkish_word_number(words: list[str]) -> Decimal | None:
             total += (current if current > 0 else Decimal("1")) * Decimal("1000")
             current = Decimal("0")
             matched_any = True
+        elif base == "milyon":
+            total += (current if current > 0 else Decimal("1")) * Decimal("1000000")
+            current = Decimal("0")
+            matched_any = True
         else:
             return None
 
     return total + current if matched_any else None
+
+
+def _format_try_number(amount: Decimal) -> str:
+    fixed = format(amount.normalize(), "f")
+    if "." in fixed:
+        fixed = fixed.rstrip("0").rstrip(".")
+    return fixed.replace(".", ",")
 
 
 def _parse_price_atom(raw_atom: str) -> tuple[Decimal | None, bool]:
@@ -285,18 +312,37 @@ def extract_price_and_units(norm: NormalizationResult) -> PriceExtractionResult:
     strict_lower = False
     strict_upper = False
     modality: ModalityKind = "required"
-    price_spans: list[tuple[int, int]] = []
     matched_texts: list[str] = []
     warning_msg: str | None = None
+    conflict_msg: str | None = None
 
-    # 1. Explicit dual range e.g. '1500-3000', '20-30 bin', '20 ile 30 bin arası'
-    range_match = _RANGE_PRICE_PATTERN.search(text)
-    if range_match and not _overlaps_any(range_match.start(), range_match.end(), consumed):
-        low_raw, high_raw = range_match.group(1), range_match.group(2)
+    neg_num_match = _NEGATIVE_PRICE_VALUE_PATTERN.search(text)
+    if neg_num_match:
+        return PriceExtractionResult(
+            price=None,
+            operator=None,
+            strict_upper=False,
+            strict_lower=False,
+            modality=modality,
+            display_label=None,
+            source_span=neg_num_match.group(0).strip(),
+            consumed_spans=tuple(consumed),
+            measurements=tuple(measurements),
+            entity_consumed_spans=tuple(sp for sp in consumed if sp not in size_spans),
+            conflict_message="Negatif fiyat sınırı geçerli değil.",
+        )
+
+    # 1. Explicit dual range(s) e.g. '1500-3000', '20-30 bin', '1500 den 3000 e kadar'
+    for range_match in _RANGE_PRICE_PATTERN.finditer(text):
+        if _overlaps_any(range_match.start(), range_match.end(), consumed):
+            continue
+        low_raw = range_match.group("low1") or range_match.group("low2")
+        high_raw = range_match.group("high1") or range_match.group("high2")
+        if low_raw is None or high_raw is None:
+            continue
         low_val, low_bin = _parse_price_atom(low_raw)
         high_val, high_bin = _parse_price_atom(high_raw)
         if low_val is not None and high_val is not None:
-            # Propagate multiplier in shorthand ranges like '20-30 bin' -> 20000-30000
             if (
                 high_bin
                 and not low_bin
@@ -304,29 +350,50 @@ def extract_price_and_units(norm: NormalizationResult) -> PriceExtractionResult:
                 and high_val >= Decimal("1000")
             ):
                 low_val *= Decimal("1000")
-            min_bound = low_val
-            max_bound = high_val
-            price_spans.append((range_match.start(), range_match.end()))
+            min_bound = low_val if min_bound is None else max(min_bound, low_val)
+            max_bound = high_val if max_bound is None else min(max_bound, high_val)
+            if min_bound > max_bound:
+                conflict_msg = (
+                    f"Çelişkili fiyat aralığı: alt sınır ({_format_try_number(min_bound)} TL) "
+                    f"üst sınırdan ({_format_try_number(max_bound)} TL) büyük olamaz."
+                )
             consumed.append((range_match.start(), range_match.end()))
             matched_texts.append(range_match.group(0))
 
-    # 2. Negative phrasing forming lower bound: '1500 altı da olmasın' => >= 1500
+    # 2a. Negative phrasing forming lower bound: '1500 altı da olmasın' => >= 1500
     for neg_lower in _DUAL_NEG_LOWER_PATTERN.finditer(text):
         if _overlaps_any(neg_lower.start(), neg_lower.end(), consumed):
             continue
         val, _ = _parse_price_atom(neg_lower.group(1))
         if val is not None:
+            if min_bound is None or val > min_bound:
+                strict_lower = False
             min_bound = val if min_bound is None else max(min_bound, val)
-            price_spans.append((neg_lower.start(), neg_lower.end()))
             consumed.append((neg_lower.start(), neg_lower.end()))
             matched_texts.append(neg_lower.group(0))
 
-    # 3. Upper bounds ('3000 altı', '3 bini geçmesin', 'en fazla 3000', '4500 e kadar')
+    # 2b. Negative phrasing forming upper bound: '3500 den fazla olmasın' => <= 3500
+    for neg_upper in _DUAL_NEG_UPPER_PATTERN.finditer(text):
+        if _overlaps_any(neg_upper.start(), neg_upper.end(), consumed):
+            continue
+        val, _ = _parse_price_atom(neg_upper.group(1))
+        if val is not None:
+            if max_bound is None or val < max_bound:
+                strict_upper = False
+            max_bound = val if max_bound is None else min(max_bound, val)
+            consumed.append((neg_upper.start(), neg_upper.end()))
+            matched_texts.append(neg_upper.group(0))
+
+    # 3. Upper bounds ('3000 altı', '3 bini geçmesin', '3000 i geçmesin', '4500 e kadar')
     for upper in _UPPER_PRICE_PATTERN.finditer(text):
         if _overlaps_any(upper.start(), upper.end(), consumed):
             continue
         raw_val = (
-            upper.group("val1") or upper.group("val2") or upper.group("val3") or upper.group("val4")
+            upper.group("val1")
+            or upper.group("val2")
+            or upper.group("val3")
+            or upper.group("val4")
+            or upper.group("val5")
         )
         if raw_val is None:
             continue
@@ -334,15 +401,18 @@ def extract_price_and_units(norm: NormalizationResult) -> PriceExtractionResult:
         if val is None:
             continue
         op_token = upper.group("op1") or ""
-        if (
+        new_strict_upper = (
             op_token.startswith("alt")
             or "ucuz" in op_token
             or "az" in op_token
             or "düşük" in op_token
-        ):
-            strict_upper = True
-        max_bound = val if max_bound is None else min(max_bound, val)
-        price_spans.append((upper.start(), upper.end()))
+            or "dusuk" in op_token
+        )
+        if max_bound is None or val < max_bound:
+            max_bound = val
+            strict_upper = new_strict_upper
+        elif val == max_bound:
+            strict_upper = strict_upper or new_strict_upper
         consumed.append((upper.start(), upper.end()))
         matched_texts.append(upper.group(0))
 
@@ -357,19 +427,26 @@ def extract_price_and_units(norm: NormalizationResult) -> PriceExtractionResult:
         if val is None:
             continue
         op_token = lower.group("op1") or ""
-        if (
+        new_strict_lower = (
             op_token.startswith("üst")
+            or op_token.startswith("ust")
             or op_token.startswith("üzeri")
+            or op_token.startswith("uzeri")
             or "yüksek" in op_token
+            or "yuksek" in op_token
+            or "pahalı" in op_token
+            or "pahali" in op_token
             or "fazla" in op_token
-        ):
-            strict_lower = True
-        min_bound = val if min_bound is None else max(min_bound, val)
-        price_spans.append((lower.start(), lower.end()))
+        )
+        if min_bound is None or val > min_bound:
+            min_bound = val
+            strict_lower = new_strict_lower
+        elif val == min_bound:
+            strict_lower = strict_lower or new_strict_lower
         consumed.append((lower.start(), lower.end()))
         matched_texts.append(lower.group(0))
 
-    # 5. Approximate phrases ('3000 civarı') when no strict bounds matched
+    # 5. Approximate phrases ('3000 civarı', 'yaklaşık 20 bin') when no strict bounds matched
     if min_bound is None and max_bound is None:
         approx = _APPROX_PRICE_PATTERN.search(text)
         if approx and not _overlaps_any(approx.start(), approx.end(), consumed):
@@ -379,12 +456,31 @@ def extract_price_and_units(norm: NormalizationResult) -> PriceExtractionResult:
                 min_bound = (val * Decimal("0.8")).quantize(Decimal("1"))
                 max_bound = (val * Decimal("1.2")).quantize(Decimal("1"))
                 modality = "approximate"
-                price_spans.append((approx.start(), approx.end()))
                 consumed.append((approx.start(), approx.end()))
                 matched_texts.append(approx.group(0))
                 warning_msg = "Yaklaşık fiyat ifadesi ±%20 aralığa çevrildi."
 
     entity_consumed = tuple(sp for sp in consumed if sp not in size_spans)
+
+    if conflict_msg or (min_bound is not None and max_bound is not None and min_bound > max_bound):
+        return PriceExtractionResult(
+            price=None,
+            operator=None,
+            strict_upper=strict_upper,
+            strict_lower=strict_lower,
+            modality=modality,
+            display_label=None,
+            source_span=" | ".join(matched_texts),
+            consumed_spans=tuple(consumed),
+            measurements=tuple(measurements),
+            entity_consumed_spans=entity_consumed,
+            conflict_message=conflict_msg
+            or (
+                f"Çelişkili fiyat aralığı: alt sınır "
+                f"({_format_try_number(min_bound or Decimal(0))} TL) "
+                f"üst sınırdan ({_format_try_number(max_bound or Decimal(0))} TL) büyük olamaz."
+            ),
+        )
 
     if min_bound is None and max_bound is None:
         return PriceExtractionResult(
@@ -400,33 +496,19 @@ def extract_price_and_units(norm: NormalizationResult) -> PriceExtractionResult:
             entity_consumed_spans=entity_consumed,
         )
 
-    # Guard against inverted contradiction (`min > max`) without crashing or dropping signal
-    if min_bound is not None and max_bound is not None and min_bound > max_bound:
-        return PriceExtractionResult(
-            price=None,
-            operator=None,
-            strict_upper=strict_upper,
-            strict_lower=strict_lower,
-            modality=modality,
-            display_label=None,
-            source_span=" | ".join(matched_texts),
-            consumed_spans=tuple(consumed),
-            measurements=tuple(measurements),
-            entity_consumed_spans=entity_consumed,
-            conflict_message=(
-                f"Çelişkili fiyat aralığı: alt sınır ({int(min_bound)} TL) üst sınırdan "
-                f"({int(max_bound)} TL) büyük olamaz."
-            ),
-        )
-
     effective_min = Decimal("0") if min_bound is None and max_bound is not None else min_bound
-    price_obj = PriceValue(min_amount=effective_min, max_amount=max_bound)
+    price_obj = PriceValue(
+        min_amount=effective_min,
+        max_amount=max_bound,
+        min_inclusive=True if min_bound is None else not strict_lower,
+        max_inclusive=True if max_bound is None else not strict_upper,
+    )
     if effective_min is not None and max_bound is not None:
         op: Literal["lte", "gte", "between"] = "between" if min_bound is not None else "lte"
-        label = f"{int(effective_min)}-{int(max_bound)} TL"
+        label = f"{_format_try_number(effective_min)}-{_format_try_number(max_bound)} TL"
     elif min_bound is not None:
         op = "gte"
-        label = f"{int(min_bound)}+ TL"
+        label = f"{_format_try_number(min_bound)}+ TL"
     else:
         raise ValueError("PriceExtractionResult must carry at least one bound")
 

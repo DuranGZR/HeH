@@ -87,6 +87,8 @@ class GoldenEvalReport:
             and self.negation_accuracy >= NEGATION_ACC_THRESHOLD
             and self.zero_negation_leak
             and self.overall_field_f1 >= OVERALL_F1_THRESHOLD
+            and self.conflict_accuracy >= 0.99
+            and self.ood_accuracy >= 0.95
             and self.latency_p95_ms <= P95_LATENCY_MS_THRESHOLD
         )
 
@@ -96,34 +98,44 @@ def _normalize_price_tuple(
     max_val: Decimal | None,
     operator: str,
     required: bool,
-) -> tuple[Decimal | None, Decimal | None, str, bool]:
+    min_inclusive: bool | None = None,
+    max_inclusive: bool | None = None,
+) -> tuple[Decimal | None, Decimal | None, str, bool, bool | None, bool | None]:
     return (
         min_val.normalize() if min_val is not None else None,
         max_val.normalize() if max_val is not None else None,
         operator,
         required,
+        min_inclusive,
+        max_inclusive,
     )
 
 
 def _gold_price_tuple(
     raw_price: dict[str, Any] | None,
-) -> tuple[Decimal | None, Decimal | None, str, bool] | None:
+) -> tuple[Decimal | None, Decimal | None, str, bool, bool | None, bool | None] | None:
     if raw_price is None:
         return None
     min_raw = raw_price.get("min")
     max_raw = raw_price.get("max")
+    min_inc = raw_price.get("min_inclusive")
+    max_inc = raw_price.get("max_inclusive")
     return _normalize_price_tuple(
         Decimal(str(min_raw)) if min_raw is not None else None,
         Decimal(str(max_raw)) if max_raw is not None else None,
         str(raw_price["operator"]),
         bool(raw_price["required"]),
+        bool(min_inc) if min_inc is not None else None,
+        bool(max_inc) if max_inc is not None else None,
     )
 
 
-def _extract_predictions(result: Any) -> dict[str, Any]:
+def _extract_predictions(result: Any, gold_price_raw: dict[str, Any] | None) -> dict[str, Any]:
     intent = result.intent
     cat_crits = {str(c.value) for c in intent.criteria if c.field == "category"}
-    price_set: set[tuple[Decimal | None, Decimal | None, str, bool]] = set()
+    price_set: set[tuple[Decimal | None, Decimal | None, str, bool, bool | None, bool | None]] = (
+        set()
+    )
     pos_brands: set[str] = set()
     brand_or_groups: set[frozenset[str]] = set()
     neg_brands: set[str] = set()
@@ -131,10 +143,15 @@ def _extract_predictions(result: Any) -> dict[str, Any]:
     color_or_groups: set[frozenset[str]] = set()
     neg_colors: set[str] = set()
     pos_sizes: set[str] = set()
+    size_or_groups: set[frozenset[str]] = set()
     neg_sizes: set[str] = set()
+    pos_genders: set[str] = set()
+    neg_genders: set[str] = set()
     pos_attrs: set[str] = set()
     neg_attrs: set[str] = set()
     measurements: set[str] = set()
+    include_min_inc = gold_price_raw is not None and "min_inclusive" in gold_price_raw
+    include_max_inc = gold_price_raw is not None and "max_inclusive" in gold_price_raw
 
     for crit in intent.criteria:
         if crit.field == "price" and isinstance(crit.value, PriceValue):
@@ -144,6 +161,8 @@ def _extract_predictions(result: Any) -> dict[str, Any]:
                     crit.value.max_amount,
                     crit.operator,
                     crit.required,
+                    crit.value.min_inclusive if include_min_inc else None,
+                    crit.value.max_inclusive if include_max_inc else None,
                 )
             )
         elif crit.field == "brand":
@@ -168,6 +187,14 @@ def _extract_predictions(result: Any) -> dict[str, Any]:
                 neg_sizes.update(vals)
             else:
                 pos_sizes.update(vals)
+                if crit.operator == "in" and len(vals) > 1:
+                    size_or_groups.add(frozenset(vals))
+        elif crit.field == "gender":
+            vals = (crit.value,) if isinstance(crit.value, str) else tuple(crit.value)
+            if crit.operator == "not_in":
+                neg_genders.update(vals)
+            else:
+                pos_genders.update(vals)
         elif crit.field == "attribute":
             if crit.id.startswith("unit-"):
                 measurements.add(crit.display_label.lower())
@@ -190,7 +217,10 @@ def _extract_predictions(result: Any) -> dict[str, Any]:
         "color_or_groups": color_or_groups,
         "neg_colors": neg_colors,
         "pos_sizes": pos_sizes,
+        "size_or_groups": size_or_groups,
         "neg_sizes": neg_sizes,
+        "pos_genders": pos_genders,
+        "neg_genders": neg_genders,
         "pos_attrs": pos_attrs,
         "neg_attrs": neg_attrs,
         "measurements": measurements,
@@ -261,7 +291,7 @@ def evaluate_golden(
         exp = row["expected"]
 
         res = adapter.parse(query, input_source=source)
-        pred = _extract_predictions(res)
+        pred = _extract_predictions(res, exp.get("price"))
 
         gold_cat = {exp["category_criterion"]} if exp.get("category_criterion") else set()
         counts["category_crit"].add(pred["category_criterion"], gold_cat)
@@ -285,8 +315,12 @@ def evaluate_golden(
         gold_sizes = set(exp.get("positive_sizes", []))
         counts["size"].add(pred["pos_sizes"], gold_sizes)
 
+        gold_size_or = {frozenset(grp) for grp in exp.get("size_or_groups", [])}
+
         gold_attrs = set(exp.get("positive_attributes", []))
         counts["attribute"].add(pred["pos_attrs"], gold_attrs)
+
+        gold_genders = set(exp.get("positive_genders", []))
 
         gold_meas = {str(m).lower() for m in exp.get("measurements", [])}
         counts["measurement"].add(pred["measurements"], gold_meas)
@@ -295,21 +329,47 @@ def evaluate_golden(
             *(f"brand:{v}" for v in pred["neg_brands"]),
             *(f"color:{v}" for v in pred["neg_colors"]),
             *(f"size:{v}" for v in pred["neg_sizes"]),
+            *(f"gender:{v}" for v in pred["neg_genders"]),
             *(f"attr:{v}" for v in pred["neg_attrs"]),
         }
         gold_neg = {
             *(f"brand:{v}" for v in exp.get("negative_brands", [])),
             *(f"color:{v}" for v in exp.get("negative_colors", [])),
             *(f"size:{v}" for v in exp.get("negative_sizes", [])),
+            *(f"gender:{v}" for v in exp.get("negative_genders", [])),
             *(f"attr:{v}" for v in exp.get("negative_attributes", [])),
         }
         counts["negation"].add(pred_neg, gold_neg)
         if pred_neg == gold_neg:
             negation_exact_hits += 1
 
-        # Critical invariant: negated values never appear as positive criteria or applied_filters
-        if (pred["pos_brands"] & pred["neg_brands"]) or (pred["pos_colors"] & pred["neg_colors"]):
+        # Critical invariant: negated values never appear as positive criteria across ALL slots
+        if (
+            (pred["pos_brands"] & pred["neg_brands"])
+            or (pred["pos_colors"] & pred["neg_colors"])
+            or (pred["pos_sizes"] & pred["neg_sizes"])
+            or (pred["pos_genders"] & pred["neg_genders"])
+            or (pred["pos_attrs"] & pred["neg_attrs"])
+        ):
             zero_negation_leak = False
+
+        # Validate logic_groups any_of/not invariants directly
+        any_of_ids = {
+            cid
+            for g in res.intent.logic_groups
+            if g.operator == "any_of"
+            for cid in g.criterion_ids
+        }
+        for or_grp in pred["brand_or_groups"] | pred["color_or_groups"] | pred["size_or_groups"]:
+            matching_or_crit = [
+                c.id
+                for c in res.intent.criteria
+                if c.operator == "in"
+                and isinstance(c.value, tuple)
+                and frozenset(c.value) == or_grp
+            ]
+            if not matching_or_crit or not any(cid in any_of_ids for cid in matching_or_crit):
+                failures.append(f"{qid}: missing ConstraintGroup('any_of') for OR criterion")
 
         if res.has_conflict == bool(exp.get("has_conflict", False)):
             conflict_hits += 1
@@ -336,6 +396,10 @@ def evaluate_golden(
             row_mismatches.append(f"color_or={pred['color_or_groups']}!={gold_color_or}")
         if pred["pos_sizes"] != gold_sizes:
             row_mismatches.append(f"sizes={pred['pos_sizes']}!={gold_sizes}")
+        if gold_size_or and pred["size_or_groups"] != gold_size_or:
+            row_mismatches.append(f"size_or={pred['size_or_groups']}!={gold_size_or}")
+        if "positive_genders" in exp and pred["pos_genders"] != gold_genders:
+            row_mismatches.append(f"genders={pred['pos_genders']}!={gold_genders}")
         if pred["pos_attrs"] != gold_attrs:
             row_mismatches.append(f"attrs={pred['pos_attrs']}!={gold_attrs}")
         if pred["measurements"] != gold_meas:

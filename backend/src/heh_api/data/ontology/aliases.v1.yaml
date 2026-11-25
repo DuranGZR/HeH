@@ -102,6 +102,15 @@ categories:
       - filtre kahve makinesi
       - espresso makinesi
 
+  - canonical_key: akilli_saat
+    ontology_id: electronics.wearables.smartwatch
+    display_name: Akıllı Saat
+    showcase: false
+    size_system: none
+    aliases:
+      - akıllı saat
+      - akilli saat
+
 brands:
   - canonical_key: mavi
     display_label: Mavi

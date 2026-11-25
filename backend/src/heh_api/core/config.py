@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 from typing import Any, Literal
+from urllib.parse import urlparse
 
 from pydantic import AliasChoices, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -24,6 +25,9 @@ def _extract_non_empty_postgres_dsn(raw_value: Any) -> str | None:
         return None
     if not candidate.startswith(_POSTGRES_DSN_PREFIXES):
         raise ValueError("database_url must start with 'postgresql://' or 'postgresql+psycopg://'")
+    parsed = urlparse(candidate)
+    if not parsed.hostname:
+        raise ValueError("database_url must include a valid PostgreSQL host")
     return candidate
 
 
@@ -35,6 +39,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
+        hide_input_in_errors=True,
     )
 
     env: Literal["development", "test", "staging", "production"] = "development"

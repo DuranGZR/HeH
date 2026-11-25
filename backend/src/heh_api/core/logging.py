@@ -6,6 +6,7 @@ import logging
 import re
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import urlparse
 
 _REQUEST_ID_VAR: contextvars.ContextVar[str] = contextvars.ContextVar(
     "heh_request_id", default="bootstrap"
@@ -48,8 +49,12 @@ _SAFE_EXTRA_KEYS = frozenset(
 )
 
 _POSTGRES_CREDENTIAL_PATTERN = re.compile(r"(postgresql(?:\+psycopg)?://)([^@\s]+)@")
-_BEARER_TOKEN_PATTERN = re.compile(r"(?i)(Bearer\s+)[A-Za-z0-9._-]+")
+_BEARER_TOKEN_PATTERN = re.compile(r"(?i)(Bearer\s+)[A-Za-z0-9._+/=-]+")
 _EMAIL_PATTERN = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+_HTTP_URL_PATTERN = re.compile(r"https?://[^\s'\"<>]+")
+_INLINE_SENSITIVE_KV_PATTERN = re.compile(
+    r"(?i)\b(password|secret(?:_key)?|token|api_key|query_text|raw_query|q)\s*([=:])\s*([^\s,;]+)"
+)
 
 
 def get_request_id() -> str:
@@ -67,10 +72,23 @@ def reset_request_id(token: contextvars.Token[str]) -> None:
     _REQUEST_ID_VAR.reset(token)
 
 
+def _mask_http_url(match: re.Match[str]) -> str:
+    raw = match.group(0)
+    try:
+        parsed = urlparse(raw)
+        host = parsed.hostname or "redacted"
+        scheme = parsed.scheme.lower()
+        return f"{scheme}://{host}/[REDACTED_URL]"
+    except ValueError:
+        return "[REDACTED_URL]"
+
+
 def redact_sensitive_text(value: str) -> str:
-    """Scrub credentials, bearer tokens, and email addresses from arbitrary log strings."""
+    """Scrub credentials, bearer tokens, full URLs, inline queries, and emails from log strings."""
     masked = _POSTGRES_CREDENTIAL_PATTERN.sub(r"\1[REDACTED]@", value)
+    masked = _HTTP_URL_PATTERN.sub(_mask_http_url, masked)
     masked = _BEARER_TOKEN_PATTERN.sub(r"\1[REDACTED]", masked)
+    masked = _INLINE_SENSITIVE_KV_PATTERN.sub(r"\1\2[REDACTED]", masked)
     return _EMAIL_PATTERN.sub("[REDACTED_EMAIL]", masked)
 
 
@@ -135,17 +153,19 @@ class JsonRedactingFormatter(logging.Formatter):
 
 
 def configure_logging(log_level: str = "INFO") -> None:
-    """Attach structured JSON redacting formatter to the `heh_api` logger hierarchy."""
+    """Attach structured JSON redacting formatter to HEH and Uvicorn logger hierarchies."""
     _install_request_id_record_factory()
-    logger = logging.getLogger("heh_api")
-    logger.setLevel(getattr(logging, log_level.upper(), logging.INFO))
+    level = getattr(logging, log_level.upper(), logging.INFO)
     formatter = JsonRedactingFormatter()
 
-    if not logger.handlers:
-        handler = logging.StreamHandler()
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
-    else:
-        for existing_handler in logger.handlers:
-            existing_handler.setFormatter(formatter)
-    logger.propagate = True
+    for logger_name in ("heh_api", "uvicorn.error", "uvicorn.access"):
+        logger = logging.getLogger(logger_name)
+        logger.setLevel(level)
+        if not logger.handlers:
+            handler = logging.StreamHandler()
+            handler.setFormatter(formatter)
+            logger.addHandler(handler)
+        else:
+            for existing_handler in logger.handlers:
+                existing_handler.setFormatter(formatter)
+        logger.propagate = logger_name == "heh_api"

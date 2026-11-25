@@ -21,18 +21,26 @@ export interface SearchApiTransport {
 const DEMO_NOTICE =
   "Doğrulanan ölçütler web kanıtına dayanır; mobil uygulama doğrulaması beklenir ve Trendyol'daki Sponsorlu alanlar fiyat aralığı dışında kalabilir.";
 
-function buildResolutionFromIntent(intent: SearchIntentV2Output): LinkResolution {
+function buildResolutionFromIntent(
+  intent: SearchIntentV2Output,
+  rebuildQuery = false,
+): LinkResolution {
   const criteria = intent.criteria ?? [];
   const applied: LinkFilterItem[] = [];
   const queryOnly: LinkFilterItem[] = [];
   const unsupported: LinkFilterItem[] = [];
   const queryParams: string[] = [];
 
-  if (intent.category_key === "erkek_mont") {
+  const activeCategoryCriterion = criteria.find(
+    (crit) => crit.field === "category" && crit.operator !== "not_in",
+  );
+  const effectiveCategoryKey = activeCategoryCriterion ? intent.category_key : null;
+
+  if (effectiveCategoryKey === "erkek_mont") {
     queryParams.push("wc=118", "wg=2");
-  } else if (intent.category_key === "spor_ayakkabi") {
+  } else if (effectiveCategoryKey === "spor_ayakkabi") {
     queryParams.push("wc=109");
-  } else if (intent.category_key === "bluetooth_kulaklik") {
+  } else if (effectiveCategoryKey === "bluetooth_kulaklik") {
     queryParams.push("wc=108626");
   }
 
@@ -49,7 +57,13 @@ function buildResolutionFromIntent(intent: SearchIntentV2Output): LinkResolution
       continue;
     }
 
-    if (crit.field === "category" && intent.category_key) {
+    if (crit.field === "category" && effectiveCategoryKey) {
+      const catId =
+        effectiveCategoryKey === "erkek_mont"
+          ? "118"
+          : effectiveCategoryKey === "bluetooth_kulaklik"
+            ? "108626"
+            : "109";
       applied.push({
         criterion_id: crit.id,
         field: "category",
@@ -57,7 +71,7 @@ function buildResolutionFromIntent(intent: SearchIntentV2Output): LinkResolution
         operator: crit.operator,
         status: "WEB_VERIFIED_PENDING_MOBILE",
         url_param: "wc",
-        url_value: intent.category_key === "erkek_mont" ? "118" : "109",
+        url_value: catId,
         reason: "Vitrin kategori kimliği web gözlemi ile doğrulandı.",
         evidence_ref: "evidence/W1/d03-url-observations.json",
       });
@@ -85,7 +99,7 @@ function buildResolutionFromIntent(intent: SearchIntentV2Output): LinkResolution
       continue;
     }
 
-    if (crit.field === "color" && crit.value === "siyah") {
+    if (crit.field === "color" && effectiveCategoryKey && crit.value === "siyah") {
       queryParams.push("wcl=14");
       applied.push({
         criterion_id: crit.id,
@@ -101,7 +115,7 @@ function buildResolutionFromIntent(intent: SearchIntentV2Output): LinkResolution
       continue;
     }
 
-    if (crit.field === "size" && crit.value === "m") {
+    if (crit.field === "size" && effectiveCategoryKey === "erkek_mont" && crit.value === "m") {
       queryParams.push(`vr=${encodeURIComponent("size|group-m")}`);
       applied.push({
         criterion_id: crit.id,
@@ -117,22 +131,26 @@ function buildResolutionFromIntent(intent: SearchIntentV2Output): LinkResolution
       continue;
     }
 
-    if (crit.field === "brand" && intent.category_key === "bluetooth_kulaklik") {
+    if (crit.field === "brand" && effectiveCategoryKey === "bluetooth_kulaklik") {
       const vals = Array.isArray(crit.value) ? crit.value : [String(crit.value)];
-      const ids = vals.map((b) => (b === "sony" ? "795" : "102285")).join(",");
-      queryParams.push(`wb=${encodeURIComponent(ids)}`);
-      applied.push({
-        criterion_id: crit.id,
-        field: "brand",
-        label: crit.display_label,
-        operator: crit.operator,
-        status: "WEB_VERIFIED_PENDING_MOBILE",
-        url_param: "wb",
-        url_value: ids,
-        reason: "Marka kimliği web gözlemiyle eşlendi.",
-        evidence_ref: "evidence/W1/d03-url-observations.json",
-      });
-      continue;
+      const brandMap: Record<string, string> = { sony: "795", jbl: "102285" };
+      const mappedIds = vals.map((b) => brandMap[b]).filter((id): id is string => Boolean(id));
+      if (mappedIds.length === vals.length && mappedIds.length > 0) {
+        const ids = mappedIds.join(",");
+        queryParams.push(`wb=${encodeURIComponent(ids)}`);
+        applied.push({
+          criterion_id: crit.id,
+          field: "brand",
+          label: crit.display_label,
+          operator: crit.operator,
+          status: "WEB_VERIFIED_PENDING_MOBILE",
+          url_param: "wb",
+          url_value: ids,
+          reason: "Marka kimliği web gözlemiyle eşlendi.",
+          evidence_ref: "evidence/W1/d03-url-observations.json",
+        });
+        continue;
+      }
     }
 
     queryOnly.push({
@@ -145,8 +163,16 @@ function buildResolutionFromIntent(intent: SearchIntentV2Output): LinkResolution
     });
   }
 
-  if (!intent.category_key || queryOnly.length > 0 || applied.length === 0) {
-    queryParams.unshift(`q=${encodeURIComponent(intent.raw_query)}`);
+  if (!effectiveCategoryKey || queryOnly.length > 0 || applied.length === 0) {
+    const queryText = rebuildQuery
+      ? queryOnly
+          .map((item) => item.label.trim())
+          .filter(Boolean)
+          .join(" ")
+      : intent.raw_query;
+    if (queryText.trim()) {
+      queryParams.unshift(`q=${encodeURIComponent(queryText.trim())}`);
+    }
   }
 
   const warningLevel =
@@ -282,7 +308,7 @@ export class MockSearchTransport implements SearchApiTransport {
     return {
       request_id: payload.client_request_id ?? "demo-resolve-edit",
       intent,
-      resolution: buildResolutionFromIntent(intent),
+      resolution: buildResolutionFromIntent(intent, true),
     };
   }
 }

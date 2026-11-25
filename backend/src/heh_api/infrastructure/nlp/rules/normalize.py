@@ -12,25 +12,33 @@ _HYPHEN_VARIANTS = ("\u2013", "\u2014", "\u2212")
 _ASR_PHRASE_REPLACEMENTS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"\bcey\s*bi\s*el\b"), "jbl"),
     (re.compile(r"\bce\s*bi\s*el\b"), "jbl"),
-    (re.compile(r"\bkulak[uü]st[uü]\b"), "kulak üstü"),
-    (re.compile(r"\bkulaki[cç]i\b"), "kulak içi"),
-    (re.compile(r"\bsuge[cç]irmez\b"), "su geçirmez"),
+    (re.compile(r"\bblutut\b"), "bluetooth"),
+    (re.compile(r"\bkulak\s*[uü]st[uü]\b"), "kulak üstü"),
+    (re.compile(r"\bkulak\s*i[cç]i\b"), "kulak içi"),
+    (re.compile(r"\bsu\s*ge[cç]irmez\b"), "su geçirmez"),
+    (re.compile(r"\bg[uü]r[uü]lt[uü]\s*engelleme\b"), "gürültü engelleme"),
     (re.compile(r"\bem\s+beden\b"), "m beden"),
     (re.compile(r"\bes\s+beden\b"), "s beden"),
     (re.compile(r"\beks\s*el\s+beden\b"), "xl beden"),
     (re.compile(r"\beks\s*lar[cç]\b"), "xl"),
     (re.compile(r"\bi\s*phone\b"), "iphone"),
-    (re.compile(r"\bgurultu\s+engelleme\b"), "gürültü engelleme"),
+    (re.compile(r"(?<!\w)(\d+)\s*bin\b"), r"\1 bin"),
 )
 
 _UNIT_FOLLOWS_LOOKAHEAD = (
     r"(?!\s*(?:gb|tb|mb|mah|hz|in[çc]|kg|mm|cm|watt|w|mp|ml|saat|litre|lt|l)\b)"
 )
+_ATTACHED_UNIT_MODEL_SKIP_RE = re.compile(
+    r"^\d+(?:[.,]\d+)?(?:gb|tb|mb|mah|hz|in[çc]|kg|kilogram|kilo|gram|gr|g|"
+    r"mm|cm|watt|w|mp|ml|pa|db|saat|litre|lt|l|bin[ie]?)$"
+)
 
 # Protected brand+model phrases and alphanumeric model tokens (numbers must not become price/size)
 _PROTECTED_PHRASE_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(rf"\biphone\s+\d+{_UNIT_FOLLOWS_LOOKAHEAD}(?:\s*(?:pro\s+max|pro|plus|mini))?\b"),
-    re.compile(rf"\bapple\s+watch\s+(?:ultra\s*\d*|\d+{_UNIT_FOLLOWS_LOOKAHEAD}|se)\b"),
+    re.compile(
+        rf"\b(?:apple\s+)?watch\s+(?:ultra\s*\d*|series\s+\d+|\d+{_UNIT_FOLLOWS_LOOKAHEAD}|se)\b"
+    ),
     re.compile(
         rf"\bgalaxy\s+(?:watch\s*\d*{_UNIT_FOLLOWS_LOOKAHEAD}|buds\s*\d*|"
         rf"[aszm]\d+{_UNIT_FOLLOWS_LOOKAHEAD}(?:\s*(?:ultra|plus|fe))?)\b"
@@ -47,11 +55,17 @@ _ALPHANUM_MODEL_PATTERN = re.compile(
     r"\b(?=[a-zçğıöşü]*\d)(?=\d*[a-zçğıöşü])[a-zçğıöşü0-9-]{2,20}\b"
 )
 
-_NUMBER_APOSTROPHE_PATTERN = re.compile(r"\b(\d+(?:[.,]\d+)?)'([a-zçğıöşü]+)\b")
-_WORD_APOSTROPHE_PATTERN = re.compile(
-    r"\b([a-zçğıöşü]{2,})'(?:nın|nin|nun|nün|ın|in|un|ün|ya|ye|a|e|da|de|ta|te|dan|den|tan|ten|ı|i|u|ü)\b"
+_NUMBER_APOSTROPHE_PATTERN = re.compile(
+    r"(?<!\w)(\d{1,3}(?:\.\d{3})+,\d+|\d{1,3}(?:\.\d{3})+|\d+(?:[.,]\d+)?)'([a-zçğıöşü]+)\b"
 )
-_CLAUSE_PUNCT_SPACING_PATTERN = re.compile(r"\s*((?<!\d),(?!\d)|[;!?])\s*")
+_CURRENCY_APOSTROPHE_PATTERN = re.compile(
+    r"\b(tl|lira)'(nın|nin|nun|nün|ın|in|un|ün|ya|ye|a|e|da|de|ta|te|dan|den|tan|ten|yı|yi|yu|yü|ı|i|u|ü)\b"
+)
+_WORD_APOSTROPHE_PATTERN = re.compile(
+    r"\b([a-zçğıöşü]{2,})'(?:nın|nin|nun|nün|ın|in|un|ün|ya|ye|a|e|da|de|ta|te|"
+    r"nda|nde|ndan|nden|dan|den|tan|ten|yı|yi|yu|yü|ı|i|u|ü)\b"
+)
+_CLAUSE_PUNCT_SPACING_PATTERN = re.compile(r"\s*((?<!\d),(?!\d)|[;!?()])\s*")
 _TERMINAL_DOT_PATTERN = re.compile(r"(?<!\d)\.(?!\d)")
 
 
@@ -119,8 +133,8 @@ def _collect_protected_spans(text: str) -> tuple[ProtectedSpan, ...]:
 
     for match in _ALPHANUM_MODEL_PATTERN.finditer(text):
         token = match.group(0)
-        # Do not protect numeric range tokens like 1500-3000 or hyphenated measurements
-        if re.fullmatch(r"\d+-\d+", token):
+        # Do not protect numeric range tokens or unit-attached measurements (16gb, 1l, 144hz)
+        if re.fullmatch(r"\d+-\d+", token) or _ATTACHED_UNIT_MODEL_SKIP_RE.match(token):
             continue
         if not any(s.start <= match.start() and match.end() <= s.end for s in spans):
             spans.append(ProtectedSpan(start=match.start(), end=match.end(), text=token))
@@ -135,9 +149,10 @@ def _collect_protected_spans(text: str) -> tuple[ProtectedSpan, ...]:
 
 
 def _strip_inflectional_apostrophes(text: str) -> str:
-    # Keep number stem + separate suffix for case markers like 4500'e kadar -> 4500 e kadar
+    # Keep number + currency suffix markers separated (`4500'e kadar`, `3000 TL'den ucuz`)
     step1 = _NUMBER_APOSTROPHE_PATTERN.sub(r"\1 \2", text)
-    return _WORD_APOSTROPHE_PATTERN.sub(r"\1", step1)
+    step2 = _CURRENCY_APOSTROPHE_PATTERN.sub(r"\1 \2", step1)
+    return _WORD_APOSTROPHE_PATTERN.sub(r"\1", step2)
 
 
 def _strip_punctuation_for_matching(text: str) -> str:

@@ -32,7 +32,7 @@ const config: ExpoConfig = {
     [
       "expo-widgets",
       {
-        enableAndroid: true,
+        enableAndroid: false,
         bundleIdentifier: "com.heh.app.widgets",
         groupIdentifier: "group.com.heh.app",
         widgets: [
