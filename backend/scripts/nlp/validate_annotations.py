@@ -8,6 +8,7 @@ import json
 import re
 import sys
 from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -327,13 +328,16 @@ def _validate_single_record(
     return errors
 
 
-def validate_annotation_file(
-    path: Path,
+def validate_annotation_files(
+    paths: Sequence[Path],
     *,
     catalog: OntologyCatalogV1 | None = None,
     fail_fast: bool = True,
 ) -> AnnotationValidationReport:
-    """Validate a JSONL annotation dataset against schema, offsets, PII, and ontology rules."""
+    """Validate one or more JSONL datasets globally against schema, offsets, PII, and ontology."""
+    if not paths:
+        raise ValueError("paths must contain at least one annotation file")
+
     resolved_catalog = catalog or load_ontology_catalog()
     categories_by_key: dict[str, tuple[bool, str]] = {
         node.canonical_key: (node.showcase, node.domain)
@@ -343,10 +347,7 @@ def validate_annotation_file(
         u.display_symbol for u in resolved_catalog.units
     }
 
-    raw_bytes = path.read_bytes()
-    dataset_sha256 = hashlib.sha256(raw_bytes).hexdigest()
-    raw_lines = raw_bytes.decode("utf-8").splitlines()
-
+    digest = hashlib.sha256()
     errors: list[str] = []
     seen_ids: set[str] = set()
     seen_queries: set[str] = set()
@@ -365,75 +366,94 @@ def validate_annotation_file(
     not_record_count = 0
     conflict_count = 0
     ood_count = 0
+    multiple_files = len(paths) > 1
 
-    for line_num, raw_line in enumerate(raw_lines, start=1):
-        stripped = raw_line.strip()
-        if not stripped:
-            errors.append(f"Line {line_num}: blank lines are forbidden in canonical JSONL")
-            if fail_fast:
-                break
-            continue
+    for path in paths:
+        raw_bytes = path.read_bytes()
+        if multiple_files:
+            digest.update(path.name.encode("utf-8"))
+            digest.update(b"\0")
+        digest.update(raw_bytes)
+        raw_lines = raw_bytes.decode("utf-8").splitlines()
+        file_prefix = f"{path.name}:" if multiple_files else ""
 
-        total_records += 1
-        try:
-            payload = json.loads(stripped)
-            record = AnnotationRecordV1.model_validate(payload)
-        except (json.JSONDecodeError, ValidationError) as exc:
-            errors.append(f"Line {line_num}: schema/JSON error: {exc}")
-            if fail_fast:
-                break
-            continue
+        stop_all = False
+        for line_num, raw_line in enumerate(raw_lines, start=1):
+            stripped = raw_line.strip()
+            if not stripped:
+                errors.append(
+                    f"{file_prefix}Line {line_num}: blank lines are forbidden in canonical JSONL"
+                )
+                if fail_fast:
+                    stop_all = True
+                    break
+                continue
 
-        record_errors = _validate_single_record(
-            record,
-            line_num=line_num,
-            categories_by_key=categories_by_key,
-            valid_unit_keys=valid_unit_keys,
-            seen_ids=seen_ids,
-            seen_queries=seen_queries,
-        )
-        if record_errors:
-            errors.extend(record_errors)
-            if fail_fast:
-                break
+            total_records += 1
+            try:
+                payload = json.loads(stripped)
+                record = AnnotationRecordV1.model_validate(payload)
+            except (json.JSONDecodeError, ValidationError) as exc:
+                errors.append(f"{file_prefix}Line {line_num}: schema/JSON error: {exc}")
+                if fail_fast:
+                    stop_all = True
+                    break
+                continue
 
-        template_families.add(record.template_family)
-        provenance_dist[record.provenance] += 1
+            record_errors = _validate_single_record(
+                record,
+                line_num=line_num,
+                categories_by_key=categories_by_key,
+                valid_unit_keys=valid_unit_keys,
+                seen_ids=seen_ids,
+                seen_queries=seen_queries,
+            )
+            if record_errors:
+                errors.extend(f"{file_prefix}{err}" for err in record_errors)
+                if fail_fast:
+                    stop_all = True
+                    break
 
-        if record.input_source == "voice" or record.provenance == "asr_simulation":
-            voice_asr_count += 1
-        if record.has_conflict:
-            conflict_count += 1
-        if record.is_ood:
-            ood_count += 1
-            category_dist["__ood__"] += 1
-            domain_dist["ood"] += 1
-        elif record.category_key is not None:
-            category_dist[record.category_key] += 1
-            is_sc, domain = categories_by_key[record.category_key]
-            domain_dist[domain] += 1
-            if is_sc:
-                showcase_count += 1
+            template_families.add(record.template_family)
+            provenance_dist[record.provenance] += 1
+
+            if record.input_source == "voice" or record.provenance == "asr_simulation":
+                voice_asr_count += 1
+            if record.has_conflict:
+                conflict_count += 1
+            if record.is_ood:
+                ood_count += 1
+                category_dist["__ood__"] += 1
+                domain_dist["ood"] += 1
+            elif record.category_key is not None:
+                category_dist[record.category_key] += 1
+                is_sc, domain = categories_by_key[record.category_key]
+                domain_dist[domain] += 1
+                if is_sc:
+                    showcase_count += 1
+                else:
+                    long_tail_count += 1
             else:
-                long_tail_count += 1
-        else:
-            category_dist["__uncategorized__"] += 1
-            domain_dist["other"] += 1
+                category_dist["__uncategorized__"] += 1
+                domain_dist["other"] += 1
 
-        has_or = any(
-            sp.relation_group and sp.relation_group.startswith("or_") for sp in record.spans
-        )
-        has_not = any(sp.polarity == "negative" for sp in record.spans)
-        if has_or:
-            or_record_count += 1
-        if has_not:
-            not_record_count += 1
+            has_or = any(
+                sp.relation_group and sp.relation_group.startswith("or_") for sp in record.spans
+            )
+            has_not = any(sp.polarity == "negative" for sp in record.spans)
+            if has_or:
+                or_record_count += 1
+            if has_not:
+                not_record_count += 1
 
-        for sp in record.spans:
-            field_dist[sp.field] += 1
+            for sp in record.spans:
+                field_dist[sp.field] += 1
+
+        if stop_all:
+            break
 
     return AnnotationValidationReport(
-        path=str(path),
+        path=", ".join(str(p) for p in paths),
         valid=len(errors) == 0 and total_records > 0,
         total_records=total_records,
         showcase_count=showcase_count,
@@ -444,7 +464,7 @@ def validate_annotation_file(
         conflict_count=conflict_count,
         ood_count=ood_count,
         template_family_count=len(template_families),
-        dataset_sha256=dataset_sha256,
+        dataset_sha256=digest.hexdigest(),
         category_distribution=dict(sorted(category_dist.items())),
         domain_distribution=dict(sorted(domain_dist.items())),
         field_distribution=dict(sorted(field_dist.items())),
@@ -453,10 +473,25 @@ def validate_annotation_file(
     )
 
 
+def validate_annotation_file(
+    path: Path,
+    *,
+    catalog: OntologyCatalogV1 | None = None,
+    fail_fast: bool = True,
+) -> AnnotationValidationReport:
+    """Validate a single JSONL annotation dataset against schema, offsets, PII, and ontology."""
+    return validate_annotation_files((path,), catalog=catalog, fail_fast=fail_fast)
+
+
 def main(argv: list[str] | None = None) -> int:
-    """CLI entrypoint validating annotation JSONL and optionally writing manifest stats."""
+    """CLI entrypoint validating annotation JSONL file(s) and optionally writing manifest stats."""
     parser = argparse.ArgumentParser(description="Validate HEH W7/W8 CQU annotation JSONL.")
-    parser.add_argument("dataset", type=Path, help="Path to JSONL annotation file.")
+    parser.add_argument(
+        "datasets",
+        nargs="+",
+        type=Path,
+        help="Path(s) to JSONL annotation file(s).",
+    )
     parser.add_argument(
         "--manifest",
         type=Path,
@@ -476,11 +511,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    if not args.dataset.is_file():
-        print(f"[FAIL] Annotation file not found: {args.dataset}", file=sys.stderr)
+    missing = [str(p) for p in args.datasets if not p.is_file()]
+    if missing:
+        print(f"[FAIL] Annotation file(s) not found: {', '.join(missing)}", file=sys.stderr)
         return 1
 
-    report = validate_annotation_file(args.dataset, fail_fast=not args.collect_all)
+    report = validate_annotation_files(args.datasets, fail_fast=not args.collect_all)
     if not report.valid:
         for err in report.errors:
             print(f"[FAIL] {err}", file=sys.stderr)
