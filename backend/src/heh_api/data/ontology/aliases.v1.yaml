@@ -111,6 +111,140 @@ categories:
       - akıllı saat
       - akilli saat
 
+  - canonical_key: kadin_mont
+    ontology_id: apparel.outerwear.womens_coat
+    display_name: Kadın Mont
+    showcase: false
+    size_system: clothing
+    aliases:
+      - kadın şişme mont
+      - kadin sisme mont
+      - kadın montu
+      - kadın mont
+      - kadin mont
+      - kadın kaban
+      - kadin kaban
+      - bayan mont
+      - bayan kaban
+
+  - canonical_key: cocuk_mont
+    ontology_id: apparel.outerwear.kids_coat
+    display_name: Çocuk Mont
+    showcase: false
+    size_system: eu_kids_age
+    aliases:
+      - çocuk şişme mont
+      - cocuk sisme mont
+      - çocuk montu
+      - cocuk montu
+      - çocuk mont
+      - cocuk mont
+      - çocuk kaban
+      - cocuk kaban
+
+  - canonical_key: kosu_tisortu
+    ontology_id: apparel.activewear.tshirt
+    display_name: Koşu Tişörtü
+    showcase: false
+    size_system: clothing
+    aliases:
+      - koşu tişörtü
+      - kosu tisortu
+      - koşu tişört
+      - kosu tisort
+      - spor tişört
+
+  - canonical_key: sirt_cantasi
+    ontology_id: apparel.bags.backpack
+    display_name: Sırt Çantası
+    showcase: false
+    size_system: volume_capacity
+    aliases:
+      - laptop sırt çantası
+      - laptop sirt cantasi
+      - sırt çantası
+      - sirt cantasi
+      - okul çantası
+      - okul cantasi
+
+  - canonical_key: outdoor_bot
+    ontology_id: footwear.outdoor.boots
+    display_name: Outdoor Bot
+    showcase: false
+    size_system: footwear
+    aliases:
+      - outdoor bot
+      - trekking botu
+      - trekking bot
+      - kışlık bot
+      - kislik bot
+      - kar botu
+
+  - canonical_key: tablet
+    ontology_id: electronics.computing.tablet
+    display_name: Tablet
+    showcase: false
+    size_system: none
+    aliases:
+      - tablet bilgisayar
+      - tablet
+      - ipad
+
+  - canonical_key: monitor
+    ontology_id: electronics.computing.monitor
+    display_name: Monitör
+    showcase: false
+    size_system: none
+    aliases:
+      - oyuncu monitörü
+      - oyuncu monitoru
+      - gaming monitör
+      - monitör
+      - monitor
+
+  - canonical_key: mekanik_klavye
+    ontology_id: electronics.peripherals.mechanical_keyboard
+    display_name: Mekanik Klavye
+    showcase: false
+    size_system: none
+    aliases:
+      - mekanik klavye
+      - oyuncu klavyesi
+
+  - canonical_key: robot_supurge
+    ontology_id: home.appliances.robot_vacuum
+    display_name: Robot Süpürge
+    showcase: false
+    size_system: none
+    aliases:
+      - akıllı robot süpürge
+      - robot süpürge
+      - robot supurge
+
+  - canonical_key: airfryer
+    ontology_id: home.kitchen.airfryer
+    display_name: Airfryer
+    showcase: false
+    size_system: volume_capacity
+    aliases:
+      - airfryer
+      - sıcak hava fritözü
+      - sicak hava fritozu
+      - hava fritözü
+
+  - canonical_key: cilt_bakim_kremi
+    ontology_id: cosmetics.skincare.moisturizer
+    display_name: Cilt Bakım Kremi
+    showcase: false
+    size_system: volume_capacity
+    aliases:
+      - cilt bakım kremi
+      - cilt bakim kremi
+      - yüz bakım kremi
+      - nemlendirici krem
+      - güneş kremi
+      - gunes kremi
+
 brands:
   - canonical_key: mavi
     display_label: Mavi
@@ -151,7 +285,7 @@ brands:
     aliases: ["dell"]
   - canonical_key: apple
     display_label: Apple
-    aliases: ["apple", "macbook", "iphone", "airpods"]
+    aliases: ["apple", "macbook", "iphone", "ipad", "airpods"]
   - canonical_key: samsung
     display_label: Samsung
     aliases: ["samsung", "galaxy"]

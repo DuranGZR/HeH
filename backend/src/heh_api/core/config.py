@@ -28,6 +28,10 @@ def _extract_non_empty_postgres_dsn(raw_value: Any) -> str | None:
     parsed = urlparse(candidate)
     if not parsed.hostname:
         raise ValueError("database_url must include a valid PostgreSQL host")
+    try:
+        _ = parsed.port
+    except ValueError as exc:
+        raise ValueError("database_url contains an invalid port") from exc
     return candidate
 
 

@@ -60,7 +60,7 @@ def test_m0_golden_gate_thresholds_and_latency() -> None:
     assert report.latency_p95_ms <= P95_LATENCY_MS_THRESHOLD
 
 
-_APP = create_app(Settings(app_env="test", nlp_mode="rules"))
+_APP = create_app(Settings(env="test", nlp_mode="rules"))
 _CLIENT = TestClient(_APP)
 
 

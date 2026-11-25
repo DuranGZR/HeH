@@ -139,10 +139,13 @@ export function buildResolutionSummaryText(resolution: LinkResolution): string {
 function mapFlowErrorMessage(err: unknown): string {
   if (err instanceof HehApiError) {
     if (err.status === 422) {
+      if (err.code === "UNSAFE_URL_PARAMETERS" && err.message.trim()) {
+        return err.message;
+      }
       return "Bu cümleyi filtrelere ayıramadık. Düzenleyebilirsin.";
     }
     if (err.status === 409) {
-      return "Filtre sözlüğü güncellendi. Aramayı tekrar çalıştır.";
+      return err.message.trim() || "Filtre sözlüğü güncellendi. Aramayı tekrar çalıştır.";
     }
     if (err.message.trim()) {
       return err.message;
@@ -342,6 +345,10 @@ export function useSearchFlow(options?: UseSearchFlowOptions): UseSearchFlowResu
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [externalOpenError, setExternalOpenError] = useState<string | null>(null);
   const [lastRequestId, setLastRequestId] = useState<string | null>(null);
+  const hasParseStateRef = useRef<boolean>(false);
+  useEffect(() => {
+    hasParseStateRef.current = parseState !== null;
+  }, [parseState]);
 
   const resolveMutation = useMutation<
     SearchResolveResponse,
@@ -422,6 +429,8 @@ export function useSearchFlow(options?: UseSearchFlowOptions): UseSearchFlowResu
           if (reqSeq !== requestSeqRef.current || controller.signal.aborted || isAbortError(err)) {
             return;
           }
+          setParseState(null);
+          setUndoSnapshot(null);
           setErrorMessage(mapFlowErrorMessage(err));
           if (err instanceof HehApiError && err.requestId) {
             setLastRequestId(err.requestId);
@@ -500,10 +509,14 @@ export function useSearchFlow(options?: UseSearchFlowOptions): UseSearchFlowResu
         }
 
         setUndoSnapshot(nextUndoSnapshot);
+        const remainingNotWarnings = (resolved.intent.criteria ?? [])
+          .filter((crit) => crit.operator === "not_in")
+          .map((crit) => `'${crit.display_label}' negatif filtresi uygulanamaz.`);
         setParseState({
           ...baseState,
           request_id: resolved.request_id,
           intent: resolved.intent,
+          warnings: remainingNotWarnings,
           resolution: resolved.resolution,
         });
         setLastRequestId(resolved.request_id);
@@ -607,8 +620,10 @@ export function useSearchFlow(options?: UseSearchFlowOptions): UseSearchFlowResu
   const clearError = useCallback(() => {
     setErrorMessage(null);
     setExternalOpenError(null);
-    setPhase((prev) => (prev === "error" ? (parseState ? "reviewing" : "idle") : prev));
-  }, [parseState]);
+    setPhase((prev) =>
+      prev === "error" ? (hasParseStateRef.current ? "reviewing" : "idle") : prev,
+    );
+  }, []);
 
   const reset = useCallback(() => {
     abortRef.current?.abort();

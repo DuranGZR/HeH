@@ -23,9 +23,10 @@ def _resolve_sqlalchemy_url() -> str:
     if configured:
         return to_sqlalchemy_postgres_dsn(configured)
 
-    env_dsn = os.environ.get("HEH_DATABASE_URL") or os.environ.get("DATABASE_URL")
-    if env_dsn:
-        return to_sqlalchemy_postgres_dsn(env_dsn)
+    for env_key in ("HEH_DATABASE_URL", "DATABASE_URL"):
+        env_dsn = os.environ.get(env_key)
+        if env_dsn is not None and env_dsn.strip():
+            return to_sqlalchemy_postgres_dsn(env_dsn)
 
     settings = Settings()
     if settings.database_url is not None:

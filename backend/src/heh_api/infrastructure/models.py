@@ -12,6 +12,7 @@ from sqlalchemy import (
     Index,
     Text,
     UniqueConstraint,
+    func,
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -34,7 +35,7 @@ class UserRow(Base):
         DateTime(timezone=True), server_default=text("now()"), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=text("now()"), nullable=False
+        DateTime(timezone=True), server_default=text("now()"), onupdate=func.now(), nullable=False
     )
     deletion_requested_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -66,7 +67,7 @@ class SavedSearchRow(Base):
         DateTime(timezone=True), server_default=text("now()"), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=text("now()"), nullable=False
+        DateTime(timezone=True), server_default=text("now()"), onupdate=func.now(), nullable=False
     )
 
 
@@ -95,7 +96,7 @@ class UserPreferenceRow(Base):
         DateTime(timezone=True), server_default=text("now()"), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=text("now()"), nullable=False
+        DateTime(timezone=True), server_default=text("now()"), onupdate=func.now(), nullable=False
     )
 
 
@@ -127,6 +128,18 @@ class FilterMappingEntryRow(Base):
     """Offline verification audit entry tied to a filter mapping release."""
 
     __tablename__ = "filter_mapping_entries"
+    __table_args__ = (
+        CheckConstraint(
+            "verification_status IN ('FILTER_VERIFIED', 'WEB_VERIFIED_PENDING_MOBILE', "
+            "'QUERY_ONLY', 'UNSUPPORTED', 'UNKNOWN')",
+            name="ck_filter_mapping_entries_status",
+        ),
+        CheckConstraint(
+            "test_platform IN ('web', 'mobile')",
+            name="ck_filter_mapping_entries_platform",
+        ),
+        Index("ix_filter_mapping_entries_release_id", "release_id"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     release_id: Mapped[uuid.UUID] = mapped_column(
@@ -150,6 +163,13 @@ class PrivacyDeletionRequestRow(Base):
     """Auditable account/history deletion request state tracker."""
 
     __tablename__ = "privacy_deletion_requests"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'processing', 'completed', 'failed')",
+            name="ck_privacy_deletion_requests_status",
+        ),
+        Index("ix_privacy_deletion_requests_user_id", "user_id"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(
@@ -167,6 +187,17 @@ class RedirectEventRow(Base):
     """Aggregate anonymous redirect telemetry bucket (zero raw query, URL, or user_id)."""
 
     __tablename__ = "redirect_events"
+    __table_args__ = (
+        CheckConstraint(
+            "platform IN ('ios', 'android', 'web')",
+            name="ck_redirect_events_platform",
+        ),
+        CheckConstraint(
+            "outcome IN ('opened', 'fallback_copied', 'cancelled', 'failed')",
+            name="ck_redirect_events_outcome",
+        ),
+        Index("ix_redirect_events_timestamp_bucket", text("timestamp_bucket DESC")),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     timestamp_bucket: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

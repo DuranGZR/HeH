@@ -65,6 +65,16 @@ def _schema_to_ts(schema: dict[str, Any]) -> str:
                 deduped.append(variant)
         return " | ".join(deduped)
 
+    if "allOf" in schema:
+        variants = [_schema_to_ts(sub) for sub in schema["allOf"]]
+        deduped = []
+        for variant in variants:
+            if variant != "unknown" and variant not in deduped:
+                deduped.append(variant)
+        if not deduped:
+            return "unknown"
+        return deduped[0] if len(deduped) == 1 else " & ".join(deduped)
+
     schema_type = schema.get("type")
     if schema_type == "string":
         return "string"

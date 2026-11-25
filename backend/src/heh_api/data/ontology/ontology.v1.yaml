@@ -219,6 +219,11 @@ units:
     display_symbol: GB
     aliases: [gb, cigabayt, gigabayt, gigabyte]
     is_monetary: false
+  - unit_key: MB
+    category: storage
+    display_symbol: MB
+    aliases: [mb, megabayt, megabyte]
+    is_monetary: false
   - unit_key: TB
     category: storage
     display_symbol: TB
@@ -278,6 +283,21 @@ units:
     category: length
     display_symbol: mm
     aliases: [mm, milimetre]
+    is_monetary: false
+  - unit_key: Pa
+    category: pressure
+    display_symbol: Pa
+    aliases: [pa, paskal, pascal]
+    is_monetary: false
+  - unit_key: dB
+    category: acoustic
+    display_symbol: dB
+    aliases: [db, desibel]
+    is_monetary: false
+  - unit_key: MP
+    category: resolution
+    display_symbol: MP
+    aliases: [mp, megapiksel, megapixel]
     is_monetary: false
 
 boolean_operators:

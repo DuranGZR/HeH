@@ -1,5 +1,5 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -58,13 +58,33 @@ export default function SearchEntryScreen() {
     restoreLastRemoved,
     openExternalResult,
     clearError,
+    reset,
   } = useSearchFlow();
 
+  const prevRouteKeyRef = useRef<string | null>(null);
+  const lastVoiceTranscriptRef = useRef<string | null>(null);
+
   useEffect(() => {
+    const routeKey = `${mode}:${initialQuery}`;
+    const prevRouteKey = prevRouteKeyRef.current;
+    if (prevRouteKey === routeKey) {
+      return;
+    }
+    prevRouteKeyRef.current = routeKey;
+
+    if (mode === "text" && initialQuery && lastVoiceTranscriptRef.current === initialQuery) {
+      lastVoiceTranscriptRef.current = null;
+      clearError();
+      return;
+    }
     if (mode === "text" && canSubmitSearchQuery(initialQuery)) {
       void runParse(initialQuery, "text");
+      return;
     }
-  }, [initialQuery, mode, runParse]);
+    if (prevRouteKey !== null && !initialQuery.trim()) {
+      reset();
+    }
+  }, [clearError, initialQuery, mode, reset, runParse]);
 
   const modeIcon = mode === "voice" ? icons.specs.mic : icons.specs.keyboard;
   const isBusy = phase === "parsing" || phase === "resolving" || phase === "opening_external";
@@ -152,13 +172,15 @@ export default function SearchEntryScreen() {
           {mode === "voice" ? (
             <VoiceEntry
               isParsing={phase === "parsing"}
-              onSwitchToText={(prefill) =>
+              onSwitchToText={(prefill) => {
+                lastVoiceTranscriptRef.current = prefill ?? null;
                 router.replace({
                   pathname: "/search",
                   params: prefill ? { mode: "text", q: prefill } : { mode: "text" },
-                })
-              }
+                });
+              }}
               onTranscriptReady={(spokenText) => {
+                lastVoiceTranscriptRef.current = spokenText;
                 setQueryText(spokenText);
                 void runParse(spokenText, "voice");
               }}
@@ -216,7 +238,13 @@ export default function SearchEntryScreen() {
             accessibilityRole="button"
             accessibilityLabel="Ana ekrana dön"
             hitSlop={hitSlop}
-            onPress={() => router.replace("/")}
+            onPress={() => {
+              if (router.canGoBack()) {
+                router.back();
+              } else {
+                router.replace("/");
+              }
+            }}
             style={({ pressed }) => [
               styles.button,
               {

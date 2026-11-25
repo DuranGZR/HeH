@@ -1,4 +1,4 @@
-import { Linking } from "react-native";
+import { Linking, Platform } from "react-native";
 
 const ALLOWED_EXTERNAL_HOSTS = new Set(["www.trendyol.com"]);
 const ALLOWED_TRENDYOL_QUERY_PARAMS = new Set([
@@ -12,7 +12,7 @@ const ALLOWED_TRENDYOL_QUERY_PARAMS = new Set([
   "pi",
   "sst",
 ]);
-const VERIFIED_FACET_PATH_REGEX = /^\/[a-z0-9-]+-x-(?:b\d+-c\d+|r\d+-g\d+-c\d+)$/;
+const VERIFIED_FACET_PATH_REGEX = /^\/[a-z0-9-]+-x-[bgcr]\d+(?:-[bgcr]\d+)*$/;
 const ENCODED_CONTROL_CHAR_REGEX = /%(?:0[0-9a-f]|1[0-9a-f]|7f)/i;
 const MAX_EXTERNAL_URL_LENGTH = 2048;
 
@@ -99,9 +99,24 @@ export async function launchSafeProviderRedirect(
     };
   }
 
+  const openDefaultUrl = async (url: string): Promise<void> => {
+    if (
+      Platform.OS === "web" &&
+      typeof window !== "undefined" &&
+      typeof window.open === "function"
+    ) {
+      const openedWin = window.open(url, "_blank", "noopener,noreferrer");
+      if (!openedWin) {
+        throw new Error("Popup blocked");
+      }
+      return;
+    }
+    await Linking.openURL(url);
+  };
+
   const canOpen = deps?.canOpenUrl ?? ((url: string) => Linking.canOpenURL(url));
-  const openPrimary = deps?.openPrimaryUrl ?? ((url: string) => Linking.openURL(url));
-  const openFallback = deps?.openFallbackUrl ?? ((url: string) => Linking.openURL(url));
+  const openPrimary = deps?.openPrimaryUrl ?? openDefaultUrl;
+  const openFallback = deps?.openFallbackUrl ?? openDefaultUrl;
 
   try {
     const supported = await canOpen(rawUrl);

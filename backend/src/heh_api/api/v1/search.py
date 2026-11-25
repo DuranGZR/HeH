@@ -28,7 +28,11 @@ router = APIRouter(prefix="/search", tags=["search"])
 @router.post(
     "/parse",
     response_model=SearchParseResponse,
-    responses={422: {"model": ApiErrorResponse}, 500: {"model": ApiErrorResponse}},
+    responses={
+        422: {"model": ApiErrorResponse},
+        500: {"model": ApiErrorResponse},
+        503: {"model": ApiErrorResponse},
+    },
 )
 def post_search_parse(
     payload: SearchParseRequest,
@@ -47,7 +51,12 @@ def post_search_parse(
 @router.post(
     "/resolve",
     response_model=SearchResolveResponse,
-    responses={422: {"model": ApiErrorResponse}, 500: {"model": ApiErrorResponse}},
+    responses={
+        409: {"model": ApiErrorResponse},
+        422: {"model": ApiErrorResponse},
+        500: {"model": ApiErrorResponse},
+        503: {"model": ApiErrorResponse},
+    },
 )
 def post_search_resolve(
     payload: SearchResolveRequest,
@@ -61,7 +70,14 @@ def post_search_resolve(
     )
 
 
-@router.get("/capabilities", response_model=ProviderCapabilitiesResponse)
+@router.get(
+    "/capabilities",
+    response_model=ProviderCapabilitiesResponse,
+    responses={
+        500: {"model": ApiErrorResponse},
+        503: {"model": ApiErrorResponse},
+    },
+)
 def get_search_capabilities(
     snapshot: Annotated[MappingSnapshot, Depends(get_mapping_snapshot)],
 ) -> ProviderCapabilitiesResponse:

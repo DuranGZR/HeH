@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
-import { AppState, Linking, type AppStateStatus } from "react-native";
+import { AppState, Linking, Platform, type AppStateStatus } from "react-native";
 
 import { resolveDefaultSpeechProvider } from "./mockSpeechProvider";
 import { SpeechSessionController, isSpeechSessionActive } from "./stateMachine";
@@ -97,7 +97,7 @@ export function useSpeechSession(options?: UseSpeechSessionOptions): UseSpeechSe
     const appStateSub = AppState.addEventListener("change", handleAppStateChange);
     return () => {
       unsubFinal();
-      appStateSub.remove();
+      appStateSub?.remove?.();
       controller.cancel();
     };
   }, [controller, syncPermissionOnMount]);
@@ -111,9 +111,12 @@ export function useSpeechSession(options?: UseSpeechSessionOptions): UseSpeechSe
     try {
       if (openSettingsImpl) {
         await openSettingsImpl();
-      } else {
-        await Linking.openSettings();
+        return true;
       }
+      if (Platform.OS === "web" || typeof Linking.openSettings !== "function") {
+        return false;
+      }
+      await Linking.openSettings();
       return true;
     } catch {
       return false;

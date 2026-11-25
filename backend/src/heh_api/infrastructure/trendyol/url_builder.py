@@ -32,6 +32,7 @@ _SPONSORED_NOTICE = (
     "Doğrulanan ölçütler web kanıtına dayanır; mobil uygulama doğrulaması beklenir ve "
     "Trendyol'daki Sponsorlu alanlar fiyat aralığı dışında kalabilir."
 )
+_VERIFIED_MAPPING_STATUSES = frozenset({"FILTER_VERIFIED", "WEB_VERIFIED_PENDING_MOBILE"})
 
 _TR_SLUG_MAP = str.maketrans(
     {
@@ -191,7 +192,8 @@ class CanonicalSearchQueryStrategy:
                 raise UnsafeUrlConstructionError("Source query text cannot be empty for q fallback")
 
         if brand_entries:
-            query_params.append(("wb", ",".join(item.url_value for item in brand_entries)))
+            unique_brand_vals = list(dict.fromkeys(item.url_value for item in brand_entries))
+            query_params.append(("wb", ",".join(unique_brand_vals)))
         if color_entries:
             query_params.append(("wcl", color_entries[0].url_value))
         if size_entries:
@@ -206,15 +208,16 @@ class CanonicalSearchQueryStrategy:
         )
 
 
-_NEGATION_SUFFIX_RE = (
-    r"(?:\s+(?:de|da))?"
-    r"(?:\s+(?:olmas[ıi]n|olmayan|hari[çc]|d[ıi][şs][ıi]nda|istemiyorum|de[ğg]il))?"
+_NEGATION_MARKER_GROUP = (
+    r"(?:olmas[ıi]n|olmayan|hari[çc](?:tir|t[ıi]r)?|d[ıi][şs][ıi]nda|istemiyorum|de[ğg]il(?:dir)?)"
 )
+_NEGATION_SUFFIX_RE = rf"(?:\s+(?:de|da))?(?:\s+{_NEGATION_MARKER_GROUP})?"
 
 
 def _strip_unsupported_negations(intent: SearchIntentV2) -> str:
     """Strip excluded NOT phrases (including ASR/uppercase variants) from fallback `q=` text."""
-    stripped = normalize_turkish_text(intent.normalized_query or intent.raw_query)
+    original_norm = normalize_turkish_text(intent.normalized_query or intent.raw_query)
+    stripped = original_norm
     terms: list[str] = []
     for crit in intent.criteria:
         if crit.operator != "not_in":
@@ -225,7 +228,7 @@ def _strip_unsupported_negations(intent: SearchIntentV2) -> str:
         for raw_val in raw_values:
             terms.append(normalize_turkish_text(str(raw_val).replace("_", " ")))
         label_root = re.sub(
-            r"\s+(?:olmas[ıi]n|olmayan|hari[çc]|d[ıi][şs][ıi]nda|istemiyorum|de[ğg]il).*$",
+            rf"\s+{_NEGATION_MARKER_GROUP}.*$",
             "",
             normalize_turkish_text(crit.display_label),
         )
@@ -235,15 +238,32 @@ def _strip_unsupported_negations(intent: SearchIntentV2) -> str:
     seen_terms: list[str] = sorted(
         {term.strip() for term in terms if term.strip()}, key=len, reverse=True
     )
-    for term in seen_terms:
-        stripped = re.sub(rf"(?<!\w){re.escape(term)}{_NEGATION_SUFFIX_RE}\b", " ", stripped)
+    if seen_terms:
+        joined_alt = "|".join(re.escape(term) for term in seen_terms)
+        # Strip multi-term coordinated exclusions first (e.g. "nike ve puma olmasın")
+        # before removing individual negated terms so positive OR elsewhere stays intact.
+        stripped = re.sub(
+            rf"(?<!\w)(?:{joined_alt})(?:\s*(?:,|ve|veya|ile)\s*(?:{joined_alt}))+"
+            rf"(?:\s+(?:de|da))?\s+{_NEGATION_MARKER_GROUP}(?!\w)",
+            " ",
+            stripped,
+        )
+        for term in seen_terms:
+            stripped = re.sub(
+                rf"(?<!\w){re.escape(term)}{_NEGATION_SUFFIX_RE}(?!\w)",
+                " ",
+                stripped,
+            )
 
-    # Remove dangling exclusion conjunctions left behind after multi-brand negation stripping.
+    # Remove dangling exclusion markers left behind after stripping excluded terms.
     stripped = re.sub(
-        r"\b(?:ve\s+)?(?:olmas[ıi]n|olmayan|hari[çc]|d[ıi][şs][ıi]nda|istemiyorum)\b",
+        r"(?<!\w)(?:ve\s+)?(?:olmas[ıi]n|olmayan|hari[çc](?:tir|t[ıi]r)?|d[ıi][şs][ıi]nda|istemiyorum)(?!\w)",
         " ",
         stripped,
     )
+    if stripped != original_norm:
+        stripped = re.sub(r"^\s*(?:ve|veya|ile|,)+\s*", " ", stripped)
+        stripped = re.sub(r"\s*(?:ve|veya|ile|,)+\s*$", " ", stripped)
     return normalize_display_query(stripped)
 
 
@@ -290,6 +310,19 @@ class TrendyolURLBuilder:
             )
             return True
 
+        if match.status not in _VERIFIED_MAPPING_STATUSES:
+            query_only.append(
+                LinkFilterItem(
+                    criterion_id=criterion.id,
+                    field=field,
+                    label=criterion.display_label,
+                    operator=criterion.operator,
+                    status="UNKNOWN" if match.status == "UNKNOWN" else "QUERY_ONLY",
+                    reason="Doğrulanmış parametre yok; q arama metniyle aktarılır.",
+                )
+            )
+            return True
+
         collector.append(match)
         applied.append(
             LinkFilterItem(
@@ -315,16 +348,24 @@ class TrendyolURLBuilder:
         rebuild_query_from_criteria: bool = False,
     ) -> LinkResolution:
         """Resolve an AST into an honest LinkResolution honoring proof and expiry gates."""
-        has_active_category = any(
-            c.field == "category" and c.operator != "not_in" for c in intent.criteria
+        active_categories = [
+            c for c in intent.criteria if c.field == "category" and c.operator != "not_in"
+        ]
+        requested_category_key = (
+            str(active_categories[0].value)
+            if active_categories and isinstance(active_categories[0].value, str)
+            else intent.category_key
         )
         raw_category = (
-            snapshot.find_category_by_key(intent.category_key) if has_active_category else None
+            snapshot.find_category_by_key(requested_category_key) if active_categories else None
         )
         category_expired = raw_category is not None and is_evidence_expired(
             raw_category.expires_at, now=now
         )
-        category = None if category_expired else raw_category
+        category_verified = (
+            raw_category is not None and raw_category.category_status in _VERIFIED_MAPPING_STATUSES
+        )
+        category = raw_category if (not category_expired and category_verified) else None
 
         applied: list[LinkFilterItem] = []
         query_only: list[LinkFilterItem] = []
@@ -427,38 +468,57 @@ class TrendyolURLBuilder:
                     )
                     continue
                 if category is not None:
-                    requested = (
+                    raw_requested = (
                         list(criterion.value)
                         if isinstance(criterion.value, tuple)
                         else [str(criterion.value)]
                     )
+                    requested: list[str] = []
+                    for item in raw_requested:
+                        norm_item = normalize_turkish_text(item)
+                        if norm_item and norm_item not in requested:
+                            requested.append(norm_item)
                     matched_brands = [
                         entry
                         for req in requested
                         for entry in category.brands
-                        if entry.canonical_key == normalize_turkish_text(req)
+                        if entry.canonical_key == req
                     ]
                     has_expired_brand = any(
                         is_evidence_expired(entry.expires_at, now=now) for entry in matched_brands
                     )
-                    if (
+                    all_verified_brand = (
                         len(matched_brands) == len(requested)
-                        and matched_brands
+                        and bool(matched_brands)
                         and not has_expired_brand
-                    ):
+                        and all(
+                            entry.status in _VERIFIED_MAPPING_STATUSES for entry in matched_brands
+                        )
+                    )
+                    if all_verified_brand:
                         brand_entries.extend(matched_brands)
                         for bm in matched_brands:
                             if bm.verified_at is not None:
                                 verified_timestamps.append(bm.verified_at)
+                        combined_status = (
+                            "WEB_VERIFIED_PENDING_MOBILE"
+                            if any(
+                                bm.status == "WEB_VERIFIED_PENDING_MOBILE" for bm in matched_brands
+                            )
+                            else matched_brands[0].status
+                        )
+                        unique_url_vals = list(
+                            dict.fromkeys(item.url_value for item in matched_brands)
+                        )
                         applied.append(
                             LinkFilterItem(
                                 criterion_id=criterion.id,
                                 field="brand",
                                 label=criterion.display_label,
                                 operator=criterion.operator,
-                                status=matched_brands[0].status,
+                                status=combined_status,
                                 url_param="wb",
-                                url_value=",".join(item.url_value for item in matched_brands),
+                                url_value=",".join(unique_url_vals),
                                 reason="Marka kimliği web gözlemiyle eşlendi.",
                                 evidence_ref=matched_brands[0].evidence_ref,
                             )
@@ -570,10 +630,15 @@ class TrendyolURLBuilder:
                 query_text_override = normalize_display_query(" ".join(query_tokens))
             elif unsupported:
                 # Never forward excluded NOT phrases (including ASR/uppercase variants) into q=
-                cleaned_fallback = _strip_unsupported_negations(intent)
-                if not cleaned_fallback and category is None and not applied:
-                    cleaned_fallback = "arama"
-                query_text_override = cleaned_fallback
+                query_text_override = _strip_unsupported_negations(intent)
+
+            if (
+                query_text_override is not None
+                and not query_text_override
+                and category is None
+                and not applied
+            ):
+                query_text_override = "arama"
 
         can_use_facet_path = (
             category is not None

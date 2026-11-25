@@ -48,13 +48,15 @@ ConfidenceState = Literal["high", "review_required", "abstain"]
 WarningLevel = Literal["none", "partial", "critical"]
 
 
-_CONTROL_WHITESPACE_RE = re.compile(r"[\x00-\x1f\x7f\u200b-\u200f\ufeff]")
+_ZERO_WIDTH_RE = re.compile(r"[\u200b-\u200f\u2060\ufeff]")
+_CONTROL_WHITESPACE_RE = re.compile(r"[\x00-\x1f\x7f]")
 
 
 def normalize_display_query(raw: str) -> str:
     """Normalize Unicode NFC and strip invisible control characters cleanly."""
     nfc = unicodedata.normalize("NFC", raw)
-    cleaned = _CONTROL_WHITESPACE_RE.sub(" ", nfc)
+    without_zero_width = _ZERO_WIDTH_RE.sub("", nfc)
+    cleaned = _CONTROL_WHITESPACE_RE.sub(" ", without_zero_width)
     return " ".join(cleaned.strip().split())
 
 
@@ -210,7 +212,13 @@ class SearchIntentV2(BaseModel):
             nodes_by_id[criterion.id] = criterion
 
         for group in self.logic_groups:
+            seen_group_ids: set[str] = set()
             for criterion_id in group.criterion_ids:
+                if criterion_id in seen_group_ids:
+                    raise ValueError(
+                        f"ConstraintGroup contains duplicate criterion id: {criterion_id}"
+                    )
+                seen_group_ids.add(criterion_id)
                 node = nodes_by_id.get(criterion_id)
                 if node is None:
                     raise ValueError(
@@ -222,11 +230,12 @@ class SearchIntentV2(BaseModel):
                     raise ValueError(
                         f"NOT group cannot reference positive criterion '{criterion_id}'"
                     )
-                if group.operator == "all_of" and (
+                if group.operator in {"all_of", "any_of"} and (
                     node.operator == "not_in" or node.polarity == "negative"
                 ):
                     raise ValueError(
-                        f"all_of group cannot reference negative criterion '{criterion_id}'"
+                        f"{group.operator} group cannot reference negative "
+                        f"criterion '{criterion_id}'"
                     )
         return self
 

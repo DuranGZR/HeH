@@ -48,12 +48,15 @@ _SAFE_EXTRA_KEYS = frozenset(
     }
 )
 
-_POSTGRES_CREDENTIAL_PATTERN = re.compile(r"(postgresql(?:\+psycopg)?://)([^@\s]+)@")
+_POSTGRES_CREDENTIAL_PATTERN = re.compile(r"(postgresql(?:\+psycopg)?://)([^/\s]+)@([^/\s@]+)")
 _BEARER_TOKEN_PATTERN = re.compile(r"(?i)(Bearer\s+)[A-Za-z0-9._+/=-]+")
 _EMAIL_PATTERN = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 _HTTP_URL_PATTERN = re.compile(r"https?://[^\s'\"<>]+")
+_IPV4_PATTERN = re.compile(r"\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\b")
 _INLINE_SENSITIVE_KV_PATTERN = re.compile(
-    r"(?i)\b(password|secret(?:_key)?|token|api_key|query_text|raw_query|q)\s*([=:])\s*([^\s,;]+)"
+    r"(?i)([\"']?)\b(password|secret(?:_key)?|token|api_key|query_text|raw_query|q)\1"
+    r"\s*([=:])\s*"
+    r"(\"(?:[^\"\\]|\\.)*\"|'(?:[^'\\]|\\.)*'|[^\s,;}\]]+)"
 )
 
 
@@ -84,11 +87,12 @@ def _mask_http_url(match: re.Match[str]) -> str:
 
 
 def redact_sensitive_text(value: str) -> str:
-    """Scrub credentials, bearer tokens, full URLs, inline queries, and emails from log strings."""
-    masked = _POSTGRES_CREDENTIAL_PATTERN.sub(r"\1[REDACTED]@", value)
+    """Scrub credentials, bearer tokens, URLs, IPs, inline queries, and emails from logs."""
+    masked = _POSTGRES_CREDENTIAL_PATTERN.sub(r"\1[REDACTED]@\3", value)
     masked = _HTTP_URL_PATTERN.sub(_mask_http_url, masked)
     masked = _BEARER_TOKEN_PATTERN.sub(r"\1[REDACTED]", masked)
-    masked = _INLINE_SENSITIVE_KV_PATTERN.sub(r"\1\2[REDACTED]", masked)
+    masked = _INLINE_SENSITIVE_KV_PATTERN.sub(r"\1\2\1\3[REDACTED]", masked)
+    masked = _IPV4_PATTERN.sub("[REDACTED_IP]", masked)
     return _EMAIL_PATTERN.sub("[REDACTED_EMAIL]", masked)
 
 

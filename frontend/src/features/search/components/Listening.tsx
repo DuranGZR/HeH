@@ -10,6 +10,7 @@ export interface ListeningProps {
   readonly isParsing?: boolean;
   readonly onStopListening: () => void;
   readonly onCancelListening: () => void;
+  readonly onDraftChange?: (transcript: string) => void;
   readonly onSubmitEditedTranscript: (transcript: string) => void;
   readonly onRetryVoice: () => void;
 }
@@ -25,6 +26,7 @@ export function Listening({
   isParsing = false,
   onStopListening,
   onCancelListening,
+  onDraftChange,
   onSubmitEditedTranscript,
   onRetryVoice,
 }: ListeningProps) {
@@ -215,9 +217,13 @@ export function Listening({
         accessibilityLabel="Algılanan arama metnini düzenle"
         autoCapitalize="none"
         autoCorrect={false}
+        blurOnSubmit
         maxLength={MAX_SEARCH_QUERY_LENGTH}
         multiline
-        onChangeText={setDraftTranscript}
+        onChangeText={(nextText) => {
+          setDraftTranscript(nextText);
+          onDraftChange?.(nextText);
+        }}
         onSubmitEditing={() => {
           if (canSubmitDraft) {
             onSubmitEditedTranscript(draftTranscript.trim());
@@ -293,6 +299,7 @@ export function Listening({
         <Pressable
           accessibilityLabel="Yeniden dinle"
           accessibilityRole="button"
+          accessibilityState={{ disabled: isParsing }}
           disabled={isParsing}
           hitSlop={hitSlop}
           onPress={onRetryVoice}

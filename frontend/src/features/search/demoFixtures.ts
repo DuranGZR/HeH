@@ -16,6 +16,38 @@ export type { SearchApiTransport } from "@/api";
 const DEMO_NOTICE =
   "Doğrulanan ölçütler web kanıtına dayanır; mobil uygulama doğrulaması beklenir ve Trendyol'daki Sponsorlu alanlar fiyat aralığı dışında kalabilir.";
 
+function roundMockPriceBound(raw: string | number | null | undefined, fallback: string): string {
+  if (raw === null || raw === undefined || raw === "") {
+    return fallback;
+  }
+  const num = Number(raw);
+  if (!Number.isFinite(num) || num < 0) {
+    return fallback;
+  }
+  return String(Math.floor(num + 0.5));
+}
+
+function stripMockUnsupportedNegations(
+  rawQuery: string,
+  unsupported: readonly LinkFilterItem[],
+): string {
+  let cleaned = rawQuery;
+  for (const item of unsupported) {
+    const cleanTerm = item.label.replace(/\s+olmas[ıi]n$/i, "").trim();
+    if (cleanTerm) {
+      cleaned = cleaned.replace(
+        new RegExp(
+          `(?:^|\\s)${cleanTerm.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s+olmas[ıi]n\\b`,
+          "gi",
+        ),
+        " ",
+      );
+    }
+  }
+  cleaned = cleaned.replace(/\s+/g, " ").trim();
+  return cleaned || "arama";
+}
+
 function buildResolutionFromIntent(
   intent: SearchIntentV2Output,
   rebuildQuery = false,
@@ -76,8 +108,14 @@ function buildResolutionFromIntent(
     if (crit.field === "price") {
       const priceObj =
         typeof crit.value === "object" && !Array.isArray(crit.value) ? crit.value : null;
-      const minVal = priceObj && "min_amount" in priceObj ? (priceObj.min_amount ?? "0") : "0";
-      const maxVal = priceObj && "max_amount" in priceObj ? (priceObj.max_amount ?? "*") : "*";
+      const minVal =
+        priceObj && "min_amount" in priceObj
+          ? roundMockPriceBound(priceObj.min_amount as string | number | null, "0")
+          : "0";
+      const maxVal =
+        priceObj && "max_amount" in priceObj
+          ? roundMockPriceBound(priceObj.max_amount as string | number | null, "*")
+          : "*";
       const prcValue = `${minVal}-${maxVal}`;
       queryParams.push(`prc=${encodeURIComponent(prcValue)}`);
       applied.push({
@@ -110,6 +148,26 @@ function buildResolutionFromIntent(
       continue;
     }
 
+    if (
+      crit.field === "color" &&
+      effectiveCategoryKey === "spor_ayakkabi" &&
+      crit.value === "beyaz"
+    ) {
+      queryParams.push("wcl=1");
+      applied.push({
+        criterion_id: crit.id,
+        field: "color",
+        label: crit.display_label,
+        operator: crit.operator,
+        status: "WEB_VERIFIED_PENDING_MOBILE",
+        url_param: "wcl",
+        url_value: "1",
+        reason: "Renk kodu wcl parametresiyle doğrulandı.",
+        evidence_ref: "evidence/W1/d03-url-observations.json",
+      });
+      continue;
+    }
+
     if (crit.field === "size" && effectiveCategoryKey === "erkek_mont" && crit.value === "m") {
       queryParams.push(`vr=${encodeURIComponent("size|group-m")}`);
       applied.push({
@@ -120,6 +178,22 @@ function buildResolutionFromIntent(
         status: "WEB_VERIFIED_PENDING_MOBILE",
         url_param: "vr",
         url_value: "size|group-m",
+        reason: "Beden parametresi vr kodu ile doğrulandı.",
+        evidence_ref: "evidence/W1/d03-url-observations.json",
+      });
+      continue;
+    }
+
+    if (crit.field === "size" && effectiveCategoryKey === "spor_ayakkabi" && crit.value === "42") {
+      queryParams.push(`vr=${encodeURIComponent("size|42")}`);
+      applied.push({
+        criterion_id: crit.id,
+        field: "size",
+        label: crit.display_label,
+        operator: crit.operator,
+        status: "WEB_VERIFIED_PENDING_MOBILE",
+        url_param: "vr",
+        url_value: "size|42",
         reason: "Beden parametresi vr kodu ile doğrulandı.",
         evidence_ref: "evidence/W1/d03-url-observations.json",
       });
@@ -159,12 +233,17 @@ function buildResolutionFromIntent(
   }
 
   if (!effectiveCategoryKey || queryOnly.length > 0 || applied.length === 0) {
-    const queryText = rebuildQuery
+    let queryText = rebuildQuery
       ? queryOnly
           .map((item) => item.label.trim())
           .filter(Boolean)
           .join(" ")
-      : intent.raw_query;
+      : unsupported.length > 0
+        ? stripMockUnsupportedNegations(intent.raw_query, unsupported)
+        : intent.raw_query;
+    if (!queryText.trim() && !effectiveCategoryKey && applied.length === 0) {
+      queryText = "arama";
+    }
     if (queryText.trim()) {
       queryParams.unshift(`q=${encodeURIComponent(queryText.trim())}`);
     }
@@ -222,6 +301,15 @@ export class MockSearchTransport implements SearchApiTransport {
         value: "bluetooth_kulaklik",
         display_label: "Bluetooth Kulaklık",
       });
+    } else if (lowered.includes("ayakkabı") || lowered.includes("ayakkabi")) {
+      categoryKey = "spor_ayakkabi";
+      criteria.push({
+        id: "cat-1",
+        field: "category",
+        operator: "eq",
+        value: "spor_ayakkabi",
+        display_label: "Spor Ayakkabı",
+      });
     }
 
     if (lowered.includes("3000 altı") || lowered.includes("0-3000")) {
@@ -231,6 +319,14 @@ export class MockSearchTransport implements SearchApiTransport {
         operator: "lte",
         value: { min_amount: "0", max_amount: "3000", currency: "TRY" },
         display_label: "0-3000 TL",
+      });
+    } else if (lowered.includes("2000 üstü")) {
+      criteria.push({
+        id: "price-1",
+        field: "price",
+        operator: "gte",
+        value: { min_amount: "2000", max_amount: null, currency: "TRY" },
+        display_label: "2000+ TL",
       });
     }
 
@@ -268,6 +364,14 @@ export class MockSearchTransport implements SearchApiTransport {
         value: "siyah",
         display_label: "Siyah",
       });
+    } else if (lowered.includes("beyaz")) {
+      criteria.push({
+        id: "color-1",
+        field: "color",
+        operator: "eq",
+        value: "beyaz",
+        display_label: "Beyaz",
+      });
     }
 
     if (lowered.includes("sony") && lowered.includes("jbl")) {
@@ -295,6 +399,17 @@ export class MockSearchTransport implements SearchApiTransport {
         operator: "eq",
         value: "m",
         display_label: "M",
+      });
+    } else if (
+      (/\b42\b/.test(lowered) || lowered.includes("42 numara")) &&
+      categoryKey === "spor_ayakkabi"
+    ) {
+      criteria.push({
+        id: "size-1",
+        field: "size",
+        operator: "eq",
+        value: "42",
+        display_label: "42",
       });
     }
 
@@ -352,6 +467,8 @@ export class MockSearchTransport implements SearchApiTransport {
 export function toInputIntent(intent: SearchIntentV2Output): SearchIntentV2Input {
   return {
     schema_version: intent.schema_version,
+    ontology_version: intent.ontology_version,
+    intent_type: intent.intent_type,
     raw_query: intent.raw_query,
     normalized_query: intent.normalized_query,
     locale: intent.locale,

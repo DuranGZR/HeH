@@ -101,11 +101,12 @@ export class HehApiClient implements SearchApiTransport {
     this.timeoutMs = options?.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
   }
 
-  public getHealthReady(signal?: AbortSignal): Promise<ReadinessResponse> {
+  public async getHealthReady(signal?: AbortSignal): Promise<ReadinessResponse> {
     return this.requestJson<ReadinessResponse>("/api/v1/health/ready", {
       method: "GET",
       signal,
       requestPrefix: "ready",
+      acceptDegraded503: true,
     });
   }
 
@@ -159,6 +160,7 @@ export class HehApiClient implements SearchApiTransport {
       signal?: AbortSignal;
       requestId?: string;
       requestPrefix?: string;
+      acceptDegraded503?: boolean;
     },
   ): Promise<TResponse> {
     if (init.signal?.aborted) {
@@ -166,16 +168,14 @@ export class HehApiClient implements SearchApiTransport {
     }
 
     const requestId = init.requestId ?? createClientRequestId(init.requestPrefix ?? "req");
-    // Keep external signal identity intact when passed while still enforcing timeout bounds.
-    const internalTimeoutController = !init.signal ? new AbortController() : null;
-    const effectiveSignal = init.signal ?? internalTimeoutController?.signal;
-
+    // Always abort underlying fetch on timeout while forwarding external signal cancellation.
+    const requestController = new AbortController();
     let timer: ReturnType<typeof setTimeout> | null = null;
-    let abortListener: (() => void) | null = null;
+    let externalAbortListener: (() => void) | null = null;
 
     const timeoutPromise = new Promise<never>((_resolve, reject) => {
       timer = setTimeout(() => {
-        internalTimeoutController?.abort();
+        requestController.abort();
         reject(
           new HehApiError({
             status: 408,
@@ -189,10 +189,11 @@ export class HehApiClient implements SearchApiTransport {
       handle.unref?.();
 
       if (init.signal) {
-        abortListener = () => {
+        externalAbortListener = () => {
+          requestController.abort();
           reject(createAbortError());
         };
-        init.signal.addEventListener("abort", abortListener, { once: true });
+        init.signal.addEventListener("abort", externalAbortListener, { once: true });
       }
     });
 
@@ -206,7 +207,7 @@ export class HehApiClient implements SearchApiTransport {
           ...(init.body !== undefined ? { "Content-Type": "application/json" } : {}),
         },
         body: init.body,
-        signal: effectiveSignal,
+        signal: requestController.signal,
       });
       // Prevent late unhandled rejections if abort/timeout settles Promise.race first.
       fetchPromise.catch(() => undefined);
@@ -215,12 +216,26 @@ export class HehApiClient implements SearchApiTransport {
       if (timer !== null) {
         clearTimeout(timer);
       }
-      if (abortListener && init.signal) {
-        init.signal.removeEventListener("abort", abortListener);
+      if (externalAbortListener && init.signal) {
+        init.signal.removeEventListener("abort", externalAbortListener);
       }
     }
 
     if (!response.ok) {
+      if (init.acceptDegraded503 && response.status === 503) {
+        try {
+          const parsed = (await response.json()) as Partial<ReadinessResponse>;
+          if (
+            parsed &&
+            typeof parsed.status === "string" &&
+            typeof parsed.mapping_snapshot === "string"
+          ) {
+            return parsed as TResponse;
+          }
+        } catch {
+          // Fall through to standard error handling if body isn't ReadinessResponse JSON
+        }
+      }
       throw await this.buildApiError(response, requestId);
     }
 

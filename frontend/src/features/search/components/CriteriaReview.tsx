@@ -255,7 +255,7 @@ export function CriteriaReview({
           {isInOrGroup ? (
             <Text
               maxFontSizeMultiplier={typography.badge.maxFontSizeMultiplier}
-              style={[typography.badge, { color: palette.textSecondary }]}
+              style={[typography.badge, { color: badgeToken.text }]}
               testID={`criterion-or-tag-${chip.criterionId}`}
             >
               · VEYA
@@ -265,7 +265,7 @@ export function CriteriaReview({
           {chip.operator === "not_in" ? (
             <Text
               maxFontSizeMultiplier={typography.badge.maxFontSizeMultiplier}
-              style={[typography.badge, { color: palette.textSecondary }]}
+              style={[typography.badge, { color: badgeToken.text }]}
               testID={`criterion-not-tag-${chip.criterionId}`}
             >
               · HARİÇ
@@ -290,7 +290,7 @@ export function CriteriaReview({
                 maxFontSizeMultiplier={typography.badge.maxFontSizeMultiplier}
                 style={[
                   typography.badge,
-                  { color: palette.textPrimary, textDecorationLine: "underline" },
+                  { color: badgeToken.text, textDecorationLine: "underline" },
                 ]}
               >
                 Fiyatı Düzenle
@@ -303,16 +303,18 @@ export function CriteriaReview({
           <View
             style={{
               gap: spacing.xs,
-              borderTopWidth: borderWidth.hairline,
-              borderTopColor: palette.borderSubtle,
-              paddingTop: spacing.xs,
+              borderRadius: radius.sm,
+              borderWidth: borderWidth.hairline,
+              borderColor: palette.borderControl,
+              backgroundColor: palette.background,
+              padding: spacing.xs,
             }}
             testID={`price-editor-${chip.criterionId}`}
           >
             <View style={[styles.priceInputsRow, { gap: spacing.xs }]}>
               <TextInput
                 accessibilityLabel="En az fiyat TL"
-                keyboardType="numeric"
+                keyboardType="decimal-pad"
                 onChangeText={setMinDraft}
                 placeholder="En az TL"
                 placeholderTextColor={palette.textMuted}
@@ -334,7 +336,7 @@ export function CriteriaReview({
               />
               <TextInput
                 accessibilityLabel="En çok fiyat TL"
-                keyboardType="numeric"
+                keyboardType="decimal-pad"
                 onChangeText={setMaxDraft}
                 placeholder="En çok TL"
                 placeholderTextColor={palette.textMuted}

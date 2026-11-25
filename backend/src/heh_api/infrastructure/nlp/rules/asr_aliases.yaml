@@ -96,32 +96,37 @@ rules:
   # --- Spoken Turkish Numbers, Half-Thousands & Currency ---
   - id: asr_num_bir_bucuk_bin
     category: numeric_currency
-    pattern: "\\bbir\\s+bu[çc]uk\\s+bin\\b"
-    replacement: "1500"
+    pattern: "\\bbir\\s+bu[çc]uk\\s+bin(?:(den|de|in|e|i))?\\b"
+    replacement: "1500 \\1"
     example_asr: "bir buçuk bin altı mont"
   - id: asr_num_iki_bucuk_bin
     category: numeric_currency
-    pattern: "\\biki\\s+bu[çc]uk\\s+bin\\b"
-    replacement: "2500"
+    pattern: "\\biki\\s+bu[çc]uk\\s+bin(?:(den|de|in|e|i))?\\b"
+    replacement: "2500 \\1"
     example_asr: "iki buçuk bin tl altı"
   - id: asr_num_uc_bucuk_bin
     category: numeric_currency
-    pattern: "\\b[üu][çc]\\s+bu[çc]uk\\s+bin\\b"
-    replacement: "3500"
+    pattern: "\\b[üu][çc]\\s+bu[çc]uk\\s+bin(?:(den|de|in|e|i))?\\b"
+    replacement: "3500 \\1"
     example_asr: "üç buçuk bin üstü"
   - id: asr_num_dort_bucuk_bin
     category: numeric_currency
-    pattern: "\\bd[öo]rt\\s+bu[çc]uk\\s+bin\\b"
-    replacement: "4500"
+    pattern: "\\bd[öo]rt\\s+bu[çc]uk\\s+bin(?:(den|de|in|e|i))?\\b"
+    replacement: "4500 \\1"
     example_asr: "dört buçuk bin arası"
   - id: asr_num_bes_bucuk_bin
     category: numeric_currency
-    pattern: "\\bbe[şs]\\s+bu[çc]uk\\s+bin\\b"
-    replacement: "5500"
+    pattern: "\\bbe[şs]\\s+bu[çc]uk\\s+bin(?:(den|de|in|e|i))?\\b"
+    replacement: "5500 \\1"
     example_asr: "beş buçuk bin altı"
+  - id: asr_num_fused_word_yuz
+    category: numeric_currency
+    pattern: "\\b(iki|[üu][çc]|d[öo]rt|be[şs]|alt[ıi]|yedi|sekiz|dokuz)y[üu]z(e|i|de|den|le)?\\b"
+    replacement: "\\1 yüz \\2"
+    example_asr: "beşyüz tl altı"
   - id: asr_num_fused_word_bin
     category: numeric_currency
-    pattern: "\\b(iki|[üu][çc]|d[öo]rt|be[şs]|alt[ıi]|yedi|sekiz|dokuz|on|yirmi|otuz|k[ıi]rk|elli)bin(e|i|de|den)?\\b"
+    pattern: "\\b(bir|iki|[üu][çc]|d[öo]rt|be[şs]|alt[ıi]|yedi|sekiz|dokuz|on|yirmi|otuz|k[ıi]rk|elli|altm[ıi][şs]|yetmi[şs]|seksen|doksan|y[üu]z)bin(e|i|de|den)?\\b"
     replacement: "\\1 bin\\2"
     example_asr: "üçbin altı mont"
   - id: asr_num_spaced_digit_bin
@@ -136,6 +141,21 @@ rules:
     example_asr: "3000 te le altı"
 
   # --- Clothing Sizes & Units ---
+  - id: asr_size_em_or
+    category: size_units
+    pattern: "\\bem(?=\\s+(?:veya|ya\\s+da|yada|/)\\s+(?:es|el|xs|s|m|l|xl|xxl)\\b)"
+    replacement: "m"
+    example_asr: "em veya el beden mont"
+  - id: asr_size_es_or
+    category: size_units
+    pattern: "\\bes(?=\\s+(?:veya|ya\\s+da|yada|/)\\s+(?:em|el|xs|s|m|l|xl|xxl)\\b)"
+    replacement: "s"
+    example_asr: "es veya m beden mont"
+  - id: asr_size_el_after_size_or
+    category: size_units
+    pattern: "\\b((?:xs|s|m|l|xl|xxl)\\s+(?:veya|ya\\s+da|yada|/)\\s+)el\\b"
+    replacement: "\\1l"
+    example_asr: "m veya el mont"
   - id: asr_size_em_beden
     category: size_units
     pattern: "\\bem\\s+beden\\b"
@@ -218,3 +238,13 @@ rules:
     pattern: "\\bg[uü]r[uü]lt[uü]\\s*(?:engelleme|engelleyici)\\b"
     replacement: "gürültü engelleme"
     example_asr: "gurultu engelleyici kulaklık"
+  - id: asr_phrase_airfryer
+    category: commerce_phrases
+    pattern: "\\b(?:ey[ıi]r\\s*fray[ıi]r|erfray[ıi]r|air\\s*frayer|air\\s*fray[ıi]r|air\\s*fryer)\\b"
+    replacement: "airfryer"
+    example_asr: "eyırfrayır beyaz"
+  - id: asr_brand_dyson_phonetic
+    category: brand_phonetics
+    pattern: "\\bdayson\\b"
+    replacement: "dyson"
+    example_asr: "dayson süpürge"

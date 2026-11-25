@@ -361,9 +361,20 @@ export class SpeechSessionController {
     this.armSessionTimeout(activeSeq);
 
     const isCurrentSession = (): boolean => !this.disposed && this.sessionSeq === activeSeq;
+    let cleanupFn: (() => void) | null = null;
+    let cleanedUpSynchronously = false;
+    const teardownNow = (): void => {
+      if (cleanupFn) {
+        this.cleanupSubscriptions = cleanupFn;
+        this.detachSubscriptions();
+      } else {
+        cleanedUpSynchronously = true;
+        this.clearTimers();
+      }
+    };
 
     try {
-      this.cleanupSubscriptions = this.provider.startListening(this.locale, {
+      cleanupFn = this.provider.startListening(this.locale, {
         onStart: () => {
           if (!isCurrentSession()) {
             return;
@@ -380,21 +391,21 @@ export class SpeechSessionController {
           if (!isCurrentSession()) {
             return;
           }
-          this.detachSubscriptions();
+          teardownNow();
           this.dispatch({ type: "FINAL_RESULT", transcript });
         },
         onEmptyResult: () => {
           if (!isCurrentSession()) {
             return;
           }
-          this.detachSubscriptions();
+          teardownNow();
           this.dispatch({ type: "EMPTY_RESULT" });
         },
         onError: (code, message) => {
           if (!isCurrentSession()) {
             return;
           }
-          this.detachSubscriptions();
+          teardownNow();
           if (code === "ABORTED") {
             this.dispatch({ type: "CANCELLED" });
             return;
@@ -405,7 +416,7 @@ export class SpeechSessionController {
           if (!isCurrentSession()) {
             return;
           }
-          this.detachSubscriptions();
+          teardownNow();
           if (this.state.status === "stopping" || this.state.status === "listening") {
             const fallbackText = this.state.partialTranscript.trim();
             if (fallbackText) {
@@ -416,7 +427,13 @@ export class SpeechSessionController {
           }
         },
       });
+      if (cleanedUpSynchronously || !isCurrentSession()) {
+        cleanupFn?.();
+      } else {
+        this.cleanupSubscriptions = cleanupFn;
+      }
     } catch {
+      cleanupFn?.();
       if (isCurrentSession()) {
         this.detachSubscriptions();
         this.dispatch({ type: "ERROR", code: "PLATFORM_ERROR" });
