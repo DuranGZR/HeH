@@ -1,6 +1,7 @@
 """Safe TrendyolRouteStrategy implementations and URLBuilder security guardrails."""
 
 from datetime import datetime
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Protocol
 from urllib.parse import quote, urlencode
 
@@ -22,15 +23,37 @@ from heh_api.domain.verification import (
     is_evidence_expired,
     validate_provider_url,
 )
+from heh_api.domain.verification import (
+    UnsafeUrlConstructionError as UnsafeUrlConstructionError,
+)
 
 _SPONSORED_NOTICE = (
     "Doğrulanan ölçütler web kanıtına dayanır; mobil uygulama doğrulaması beklenir ve "
     "Trendyol'daki Sponsorlu alanlar fiyat aralığı dışında kalabilir."
 )
 
+_TR_SLUG_MAP = str.maketrans(
+    {
+        "ç": "c",
+        "ğ": "g",
+        "ı": "i",
+        "İ": "i",
+        "ö": "o",
+        "ş": "s",
+        "ü": "u",
+        "Ç": "c",
+        "Ğ": "g",
+        "I": "i",
+        "Ö": "o",
+        "Ş": "s",
+        "Ü": "u",
+        "_": "-",
+    }
+)
 
-class UnsafeUrlConstructionError(ValueError):
-    """Raised when URL assembly violates host, scheme, param, or -x- segment allowlists."""
+
+def _to_ascii_slug(raw_key: str) -> str:
+    return raw_key.translate(_TR_SLUG_MAP).lower()
 
 
 class TrendyolRouteStrategy(Protocol):
@@ -48,15 +71,24 @@ class TrendyolRouteStrategy(Protocol):
         size_entries: list[FacetMappingEntry],
         price_value: PriceValue | None,
         include_source_query: bool,
+        query_text_override: str | None = None,
     ) -> str:
         """Build an allowlisted Trendyol HTTPS URL."""
         ...
 
 
 def format_price_param(price: PriceValue) -> str:
-    """Format monetary PriceValue into Trendyol's canonical `prc` range token."""
-    low_str = str(int(price.min_amount)) if price.min_amount is not None else "0"
-    high_str = str(int(price.max_amount)) if price.max_amount is not None else "*"
+    """Format monetary PriceValue into Trendyol's canonical `prc` integer range token."""
+    low_str = (
+        str(price.min_amount.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+        if price.min_amount is not None
+        else "0"
+    )
+    high_str = (
+        str(price.max_amount.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+        if price.max_amount is not None
+        else "*"
+    )
     return f"{low_str}-{high_str}"
 
 
@@ -65,7 +97,7 @@ def build_safe_query_string(params: list[tuple[str, str]]) -> str:
     for key, value in params:
         if key not in ALLOWED_TRENDYOL_QUERY_PARAMS:
             raise UnsafeUrlConstructionError(f"Disallowed query parameter key: '{key}'")
-        if any(ch in value for ch in ("\r", "\n", "\x00")):
+        if any(ord(ch) < 32 or ord(ch) == 127 for ch in value):
             raise UnsafeUrlConstructionError("Query parameter contains control characters")
     return urlencode(params, safe="")
 
@@ -85,18 +117,19 @@ class VerifiedFacetPathStrategy:
         size_entries: list[FacetMappingEntry],
         price_value: PriceValue | None,
         include_source_query: bool,
+        query_text_override: str | None = None,
     ) -> str:
         """Assemble a proven single-brand or single-color `-x-` path URL."""
         if category is None or size_entries or include_source_query or price_value is not None:
             raise UnsafeUrlConstructionError("VerifiedFacetPathStrategy preconditions not met")
 
-        cat_slug = category.category_key.replace("_", "-")
+        cat_slug = _to_ascii_slug(category.category_key)
         if len(brand_entries) == 1 and not color_entries and category.wg_id is None:
             brand = brand_entries[0]
             if not brand.url_value.isdigit() or not category.wc_id.isdigit():
                 raise UnsafeUrlConstructionError("Brand/category IDs must be numeric for -x- route")
             segment = f"b{brand.url_value}-c{category.wc_id}"
-            prefix = f"{brand.canonical_key}-{cat_slug}"
+            prefix = f"{_to_ascii_slug(brand.canonical_key)}-{cat_slug}"
         elif len(color_entries) == 1 and not brand_entries and category.wg_id is not None:
             color = color_entries[0]
             if not (
@@ -106,7 +139,7 @@ class VerifiedFacetPathStrategy:
                     "Color/gender/category IDs must be numeric for -x- route"
                 )
             segment = f"r{color.url_value}-g{category.wg_id}-c{category.wc_id}"
-            prefix = f"{color.canonical_key}-{cat_slug}"
+            prefix = f"{_to_ascii_slug(color.canonical_key)}-{cat_slug}"
         else:
             raise UnsafeUrlConstructionError(
                 "Unsupported filter combination for verified_facet_path"
@@ -137,6 +170,7 @@ class CanonicalSearchQueryStrategy:
         size_entries: list[FacetMappingEntry],
         price_value: PriceValue | None,
         include_source_query: bool,
+        query_text_override: str | None = None,
     ) -> str:
         """Assemble allowlisted `/sr?...` query string preserving source Turkish query text."""
         query_params: list[tuple[str, str]] = []
@@ -146,10 +180,14 @@ class CanonicalSearchQueryStrategy:
                 query_params.append(("wg", category.wg_id))
 
         if include_source_query:
-            clean_source = normalize_display_query(intent.raw_query)
-            if not clean_source:
+            source_candidate = (
+                query_text_override if query_text_override is not None else intent.raw_query
+            )
+            clean_source = normalize_display_query(source_candidate)
+            if clean_source:
+                query_params.append(("q", clean_source))
+            elif not query_params:
                 raise UnsafeUrlConstructionError("Source query text cannot be empty for q fallback")
-            query_params.append(("q", clean_source))
 
         if brand_entries:
             query_params.append(("wb", ",".join(item.url_value for item in brand_entries)))
@@ -232,9 +270,15 @@ class TrendyolURLBuilder:
         snapshot: MappingSnapshot,
         *,
         now: datetime | None = None,
+        rebuild_query_from_criteria: bool = False,
     ) -> LinkResolution:
         """Resolve an AST into an honest LinkResolution honoring proof and expiry gates."""
-        raw_category = snapshot.find_category_by_key(intent.category_key)
+        has_active_category = any(
+            c.field == "category" and c.operator != "not_in" for c in intent.criteria
+        )
+        raw_category = (
+            snapshot.find_category_by_key(intent.category_key) if has_active_category else None
+        )
         category_expired = raw_category is not None and is_evidence_expired(
             raw_category.expires_at, now=now
         )
@@ -248,6 +292,7 @@ class TrendyolURLBuilder:
         color_entries: list[FacetMappingEntry] = []
         size_entries: list[FacetMappingEntry] = []
         price_value: PriceValue | None = None
+        verified_timestamps: list[datetime] = []
 
         for criterion in intent.criteria:
             if criterion.operator == "not_in":
@@ -265,6 +310,8 @@ class TrendyolURLBuilder:
 
             if criterion.field == "category":
                 if category is not None:
+                    if category.verified_at is not None:
+                        verified_timestamps.append(category.verified_at)
                     applied.append(
                         LinkFilterItem(
                             criterion_id=criterion.id,
@@ -296,6 +343,18 @@ class TrendyolURLBuilder:
                 continue
 
             if criterion.field == "price" and isinstance(criterion.value, PriceValue):
+                if price_value is not None:
+                    query_only.append(
+                        LinkFilterItem(
+                            criterion_id=criterion.id,
+                            field="price",
+                            label=criterion.display_label,
+                            operator=criterion.operator,
+                            status="QUERY_ONLY",
+                            reason="Tek fiyat sınırı uygulandı; ek fiyat ifadesi metne bırakıldı.",
+                        )
+                    )
+                    continue
                 price_value = criterion.value
                 applied.append(
                     LinkFilterItem(
@@ -312,42 +371,8 @@ class TrendyolURLBuilder:
                 )
                 continue
 
-            if criterion.field == "brand" and category is not None:
-                requested = (
-                    list(criterion.value)
-                    if isinstance(criterion.value, tuple)
-                    else [str(criterion.value)]
-                )
-                matched_brands = [
-                    entry
-                    for req in requested
-                    for entry in category.brands
-                    if entry.canonical_key == normalize_turkish_text(req)
-                ]
-                has_expired_brand = any(
-                    is_evidence_expired(entry.expires_at, now=now) for entry in matched_brands
-                )
-                if (
-                    len(matched_brands) == len(requested)
-                    and matched_brands
-                    and not has_expired_brand
-                ):
-                    brand_entries.extend(matched_brands)
-                    applied.append(
-                        LinkFilterItem(
-                            criterion_id=criterion.id,
-                            field="brand",
-                            label=criterion.display_label,
-                            operator=criterion.operator,
-                            status=matched_brands[0].status,
-                            url_param="wb",
-                            url_value=",".join(item.url_value for item in matched_brands),
-                            reason="Marka kimliği web gözlemiyle eşlendi.",
-                            evidence_ref=matched_brands[0].evidence_ref,
-                        )
-                    )
-                    continue
-                if has_expired_brand:
+            if criterion.field == "brand":
+                if category_expired:
                     query_only.append(
                         LinkFilterItem(
                             criterion_id=criterion.id,
@@ -355,44 +380,128 @@ class TrendyolURLBuilder:
                             label=criterion.display_label,
                             operator=criterion.operator,
                             status="UNKNOWN",
-                            reason="Marka doğrulama süresi doldu; metinle aranır.",
+                            reason="Kategori doğrulama süresi dolduğu için marka metne aktarıldı.",
                         )
                     )
                     continue
+                if category is not None:
+                    requested = (
+                        list(criterion.value)
+                        if isinstance(criterion.value, tuple)
+                        else [str(criterion.value)]
+                    )
+                    matched_brands = [
+                        entry
+                        for req in requested
+                        for entry in category.brands
+                        if entry.canonical_key == normalize_turkish_text(req)
+                    ]
+                    has_expired_brand = any(
+                        is_evidence_expired(entry.expires_at, now=now) for entry in matched_brands
+                    )
+                    if (
+                        len(matched_brands) == len(requested)
+                        and matched_brands
+                        and not has_expired_brand
+                    ):
+                        brand_entries.extend(matched_brands)
+                        for bm in matched_brands:
+                            if bm.verified_at is not None:
+                                verified_timestamps.append(bm.verified_at)
+                        applied.append(
+                            LinkFilterItem(
+                                criterion_id=criterion.id,
+                                field="brand",
+                                label=criterion.display_label,
+                                operator=criterion.operator,
+                                status=matched_brands[0].status,
+                                url_param="wb",
+                                url_value=",".join(item.url_value for item in matched_brands),
+                                reason="Marka kimliği web gözlemiyle eşlendi.",
+                                evidence_ref=matched_brands[0].evidence_ref,
+                            )
+                        )
+                        continue
+                    if has_expired_brand:
+                        query_only.append(
+                            LinkFilterItem(
+                                criterion_id=criterion.id,
+                                field="brand",
+                                label=criterion.display_label,
+                                operator=criterion.operator,
+                                status="UNKNOWN",
+                                reason="Marka doğrulama süresi doldu; metinle aranır.",
+                            )
+                        )
+                        continue
 
-            if criterion.field == "color" and self._resolve_single_facet(
-                criterion=criterion,
-                field="color",
-                pool=(
-                    category.colors
-                    if category is not None and category.colors
-                    else snapshot.global_colors
-                ),
-                now=now,
-                applied=applied,
-                query_only=query_only,
-                collector=color_entries,
-                verified_reason="Renk kodu wcl parametresiyle doğrulandı.",
-                expired_reason="Renk parametre doğrulama süresi doldu; metin aramasına alındı.",
-            ):
-                continue
+            if criterion.field == "color":
+                if category_expired:
+                    query_only.append(
+                        LinkFilterItem(
+                            criterion_id=criterion.id,
+                            field="color",
+                            label=criterion.display_label,
+                            operator=criterion.operator,
+                            status="UNKNOWN",
+                            reason="Kategori doğrulama süresi dolduğu için renk metne aktarıldı.",
+                        )
+                    )
+                    continue
+                if (
+                    category is not None
+                    and not color_entries
+                    and criterion.operator != "in"
+                    and self._resolve_single_facet(
+                        criterion=criterion,
+                        field="color",
+                        pool=category.colors,
+                        now=now,
+                        applied=applied,
+                        query_only=query_only,
+                        collector=color_entries,
+                        verified_reason="Renk kodu wcl parametresiyle doğrulandı.",
+                        expired_reason=(
+                            "Renk parametre doğrulama süresi doldu; metin aramasına alındı."
+                        ),
+                    )
+                ):
+                    if color_entries and color_entries[-1].verified_at is not None:
+                        verified_timestamps.append(color_entries[-1].verified_at)
+                    continue
 
-            if (
-                criterion.field == "size"
-                and category is not None
-                and self._resolve_single_facet(
-                    criterion=criterion,
-                    field="size",
-                    pool=category.sizes,
-                    now=now,
-                    applied=applied,
-                    query_only=query_only,
-                    collector=size_entries,
-                    verified_reason="Beden parametresi vr kodu ile doğrulandı.",
-                    expired_reason="Beden doğrulama süresi doldu; metinle aranır.",
-                )
-            ):
-                continue
+            if criterion.field == "size":
+                if category_expired:
+                    query_only.append(
+                        LinkFilterItem(
+                            criterion_id=criterion.id,
+                            field="size",
+                            label=criterion.display_label,
+                            operator=criterion.operator,
+                            status="UNKNOWN",
+                            reason="Kategori doğrulama süresi dolduğu için beden metne aktarıldı.",
+                        )
+                    )
+                    continue
+                if (
+                    category is not None
+                    and not size_entries
+                    and criterion.operator != "in"
+                    and self._resolve_single_facet(
+                        criterion=criterion,
+                        field="size",
+                        pool=category.sizes,
+                        now=now,
+                        applied=applied,
+                        query_only=query_only,
+                        collector=size_entries,
+                        verified_reason="Beden parametresi vr kodu ile doğrulandı.",
+                        expired_reason="Beden doğrulama süresi doldu; metinle aranır.",
+                    )
+                ):
+                    if size_entries and size_entries[-1].verified_at is not None:
+                        verified_timestamps.append(size_entries[-1].verified_at)
+                    continue
 
             query_only.append(
                 LinkFilterItem(
@@ -406,6 +515,25 @@ class TrendyolURLBuilder:
             )
 
         include_source_query = bool(category is None or query_only or not applied)
+        query_text_override: str | None = None
+        if include_source_query:
+            if rebuild_query_from_criteria:
+                query_tokens = [item.label for item in query_only if item.label.strip()]
+                if not query_tokens and category is None:
+                    query_tokens = [
+                        c.display_label
+                        for c in intent.criteria
+                        if c.operator != "not_in" and c.field != "price" and c.display_label.strip()
+                    ]
+                query_text_override = normalize_display_query(" ".join(query_tokens))
+            elif unsupported:
+                # Never forward excluded NOT phrases ('nike olmasın') into Trendyol q=
+                stripped = intent.raw_query
+                for crit in intent.criteria:
+                    if crit.operator == "not_in" and crit.source_span:
+                        stripped = stripped.replace(crit.source_span, " ")
+                query_text_override = normalize_display_query(stripped)
+
         can_use_facet_path = (
             category is not None
             and not include_source_query
@@ -426,6 +554,7 @@ class TrendyolURLBuilder:
             size_entries=size_entries,
             price_value=price_value,
             include_source_query=include_source_query,
+            query_text_override=query_text_override,
         )
 
         warning_level = "none"
@@ -444,4 +573,5 @@ class TrendyolURLBuilder:
             unsupported=tuple(unsupported),
             warning_level=warning_level,
             verification_notice=_SPONSORED_NOTICE,
+            verified_at=max(verified_timestamps) if verified_timestamps else None,
         )

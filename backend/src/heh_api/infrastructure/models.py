@@ -26,9 +26,10 @@ class UserRow(Base):
     """Account identity linked solely to external OIDC/OTP subject claim."""
 
     __tablename__ = "users"
+    __table_args__ = (UniqueConstraint("auth_provider_sub", name="uq_users_auth_provider_sub"),)
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    auth_provider_sub: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    auth_provider_sub: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=text("now()"), nullable=False
     )

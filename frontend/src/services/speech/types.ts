@@ -17,6 +17,8 @@ export type SpeechErrorCode =
   | "ALREADY_ACTIVE"
   | "INTERRUPTED"
   | "ABORTED"
+  | "NETWORK_ERROR"
+  | "BUSY_ERROR"
   | "PLATFORM_ERROR";
 
 export interface SpeechPermissionResult {
@@ -60,5 +62,7 @@ export const SPEECH_RECOVERY_MESSAGES: Record<SpeechErrorCode, string> = {
   ALREADY_ACTIVE: "Sesli arama zaten aktif.",
   INTERRUPTED: "Ses kaydı kesintiye uğradı. Tekrar deneyebilirsin.",
   ABORTED: "Sesli arama iptal edildi.",
+  NETWORK_ERROR: "Ağ bağlantısı zayıf. Cihazdaki ses tanıma veya yazı modunu dene.",
+  BUSY_ERROR: "Konuşma servisi şu an meşgul. Kısa süre sonra tekrar dene.",
   PLATFORM_ERROR: "Ses algılanamadı. Yazarak devam edebilirsin.",
 };

@@ -40,7 +40,13 @@ export function parseWidgetDeepLink(rawUrl: string | null | undefined): WidgetRo
     return { destination: "home", reason: "invalid_scheme" };
   }
 
-  if (parsed.protocol.toLowerCase() !== `${WIDGET_SCHEME}:`) {
+  if (
+    parsed.protocol.toLowerCase() !== `${WIDGET_SCHEME}:` ||
+    parsed.username !== "" ||
+    parsed.password !== "" ||
+    parsed.port !== "" ||
+    parsed.hash !== ""
+  ) {
     return { destination: "home", reason: "invalid_scheme" };
   }
 

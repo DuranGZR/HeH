@@ -45,12 +45,14 @@ def list_saved_searches_for_owner(
     owner_user_id: uuid.UUID,
     limit: int = 50,
 ) -> list[SavedSearchRow]:
-    """Return newest saved searches owned exclusively by `owner_user_id`."""
+    """Return newest saved searches owned exclusively by an active `owner_user_id`."""
+    bounded_limit = max(1, min(limit, 100))
     stmt = (
         select(SavedSearchRow)
-        .where(SavedSearchRow.user_id == owner_user_id)
+        .join(UserRow, SavedSearchRow.user_id == UserRow.id)
+        .where(SavedSearchRow.user_id == owner_user_id, UserRow.deleted_at.is_(None))
         .order_by(SavedSearchRow.created_at.desc())
-        .limit(limit)
+        .limit(bounded_limit)
     )
     return list(session.scalars(stmt).all())
 
@@ -61,10 +63,15 @@ def get_saved_search_for_owner(
     owner_user_id: uuid.UUID,
     search_id: uuid.UUID,
 ) -> SavedSearchRow | None:
-    """Fetch a single saved search only if owned by `owner_user_id`."""
-    stmt = select(SavedSearchRow).where(
-        SavedSearchRow.id == search_id,
-        SavedSearchRow.user_id == owner_user_id,
+    """Fetch a single saved search only if owned by an active `owner_user_id`."""
+    stmt = (
+        select(SavedSearchRow)
+        .join(UserRow, SavedSearchRow.user_id == UserRow.id)
+        .where(
+            SavedSearchRow.id == search_id,
+            SavedSearchRow.user_id == owner_user_id,
+            UserRow.deleted_at.is_(None),
+        )
     )
     return session.scalar(stmt)
 

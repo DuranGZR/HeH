@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { useHehTheme, type ThemeMode } from "@/theme";
 
@@ -21,10 +21,32 @@ const THEME_MODE_LABELS: Readonly<Record<ThemeMode, string>> = {
  * Exposes theme switching and honest scope status without ads or dead placeholder pages.
  */
 export function MoreMenuModal({ visible, onClose }: MoreMenuModalProps) {
-  const { palette, typography, spacing, radius, borderWidth, touchTarget, layout, icons, hitSlop } =
-    useHehTheme();
-  const { mode, setMode } = useHehTheme();
+  if (!visible) {
+    return null;
+  }
+  return <MoreMenuModalContent visible={visible} onClose={onClose} />;
+}
+
+function MoreMenuModalContent({ visible, onClose }: MoreMenuModalProps) {
+  const {
+    palette,
+    typography,
+    spacing,
+    radius,
+    borderWidth,
+    touchTarget,
+    layout,
+    icons,
+    hitSlop,
+    mode,
+    setMode,
+  } = useHehTheme();
   const [selectedNotice, setSelectedNotice] = useState<string | null>(null);
+
+  const handleClose = (): void => {
+    setSelectedNotice(null);
+    onClose();
+  };
 
   const handleItemPress = (item: OverflowMenuItem): void => {
     setSelectedNotice(`${item.label}: ${item.subtitle}`);
@@ -34,7 +56,7 @@ export function MoreMenuModal({ visible, onClose }: MoreMenuModalProps) {
     <Modal
       accessibilityViewIsModal
       animationType="none"
-      onRequestClose={onClose}
+      onRequestClose={handleClose}
       transparent
       visible={visible}
     >
@@ -42,7 +64,7 @@ export function MoreMenuModal({ visible, onClose }: MoreMenuModalProps) {
         <Pressable
           accessibilityLabel="Menüyü kapat"
           accessibilityRole="button"
-          onPress={onClose}
+          onPress={handleClose}
           style={styles.dismissOverlay}
           testID="more-menu-backdrop"
         />
@@ -52,6 +74,7 @@ export function MoreMenuModal({ visible, onClose }: MoreMenuModalProps) {
             styles.sheet,
             {
               maxWidth: layout.maxContentWidth,
+              maxHeight: "85%",
               backgroundColor: palette.surfaceElevated,
               borderColor: palette.borderSubtle,
               borderTopWidth: borderWidth.hairline,
@@ -67,6 +90,7 @@ export function MoreMenuModal({ visible, onClose }: MoreMenuModalProps) {
         >
           <View style={styles.header}>
             <Text
+              accessibilityRole="header"
               maxFontSizeMultiplier={typography.screenTitle.maxFontSizeMultiplier}
               style={[typography.screenTitle, { color: palette.textPrimary }]}
             >
@@ -76,7 +100,7 @@ export function MoreMenuModal({ visible, onClose }: MoreMenuModalProps) {
               accessibilityLabel="Menüyü kapat"
               accessibilityRole="button"
               hitSlop={hitSlop}
-              onPress={onClose}
+              onPress={handleClose}
               style={({ pressed }) => [
                 styles.closeButton,
                 {
@@ -97,108 +121,114 @@ export function MoreMenuModal({ visible, onClose }: MoreMenuModalProps) {
             </Pressable>
           </View>
 
-          <View style={[styles.themeRow, { gap: spacing.xs }]}>
-            <Text
-              maxFontSizeMultiplier={typography.caption.maxFontSizeMultiplier}
-              style={[typography.caption, { color: palette.textSecondary }]}
-            >
-              Tema
-            </Text>
-            <View style={[styles.themeChoices, { gap: spacing.xs }]}>
-              {(["system", "light", "dark"] as const).map((candidateMode) => {
-                const isActive = mode === candidateMode;
-                return (
-                  <Pressable
-                    accessibilityLabel={`Tema: ${THEME_MODE_LABELS[candidateMode]}`}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected: isActive }}
-                    key={candidateMode}
-                    onPress={() => setMode(candidateMode)}
-                    style={[
-                      styles.themePill,
-                      {
-                        minHeight: touchTarget.iosMinimum,
-                        borderRadius: radius.pill,
-                        borderWidth: borderWidth.hairline,
-                        borderColor: isActive ? palette.ctaBackground : palette.borderControl,
-                        backgroundColor: isActive ? palette.ctaBackground : palette.surfaceMuted,
-                        paddingHorizontal: spacing.sm,
-                      },
-                    ]}
-                    testID={`theme-option-${candidateMode}`}
-                  >
-                    <Text
-                      maxFontSizeMultiplier={typography.badge.maxFontSizeMultiplier}
-                      style={[
-                        typography.badge,
-                        { color: isActive ? palette.ctaText : palette.textPrimary },
-                      ]}
-                    >
-                      {THEME_MODE_LABELS[candidateMode]}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          </View>
-
-          <View style={[styles.itemList, { gap: spacing.xs }]}>
-            {OVERFLOW_MENU_ITEMS.map((item) => (
-              <Pressable
-                accessibilityHint={item.accessibilityHint}
-                accessibilityLabel={item.label}
-                accessibilityRole="menuitem"
-                key={item.id}
-                onPress={() => handleItemPress(item)}
-                style={({ pressed }) => [
-                  styles.menuRow,
-                  {
-                    minHeight: touchTarget.minimum,
-                    borderRadius: radius.md,
-                    borderWidth: borderWidth.hairline,
-                    borderColor: palette.borderSubtle,
-                    backgroundColor: pressed ? palette.surfacePressed : palette.surfaceMuted,
-                    paddingHorizontal: spacing.md,
-                    paddingVertical: spacing.xs,
-                  },
-                ]}
-                testID={`more-item-${item.id}`}
-              >
-                <Text
-                  maxFontSizeMultiplier={typography.bodyMedium.maxFontSizeMultiplier}
-                  style={[typography.bodyMedium, { color: palette.textPrimary }]}
-                >
-                  {item.label}
-                </Text>
-                <Text
-                  maxFontSizeMultiplier={typography.caption.maxFontSizeMultiplier}
-                  style={[typography.caption, { color: palette.textSecondary }]}
-                >
-                  {item.subtitle}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-
-          {selectedNotice ? (
-            <View
-              accessibilityLiveRegion="polite"
-              style={{
-                borderRadius: radius.sm,
-                borderWidth: borderWidth.hairline,
-                borderColor: palette.borderControl,
-                padding: spacing.sm,
-              }}
-              testID="more-menu-notice"
-            >
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ gap: spacing.sm }}
+          >
+            <View style={[styles.themeRow, { gap: spacing.xs }]}>
               <Text
                 maxFontSizeMultiplier={typography.caption.maxFontSizeMultiplier}
                 style={[typography.caption, { color: palette.textSecondary }]}
               >
-                {selectedNotice}
+                Tema
               </Text>
+              <View style={[styles.themeChoices, { gap: spacing.xs }]}>
+                {(["system", "light", "dark"] as const).map((candidateMode) => {
+                  const isActive = mode === candidateMode;
+                  return (
+                    <Pressable
+                      accessibilityLabel={`Tema: ${THEME_MODE_LABELS[candidateMode]}`}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: isActive }}
+                      hitSlop={hitSlop}
+                      key={candidateMode}
+                      onPress={() => setMode(candidateMode)}
+                      style={[
+                        styles.themePill,
+                        {
+                          minHeight: touchTarget.minimum,
+                          borderRadius: radius.pill,
+                          borderWidth: borderWidth.hairline,
+                          borderColor: isActive ? palette.ctaBackground : palette.borderControl,
+                          backgroundColor: isActive ? palette.ctaBackground : palette.surfaceMuted,
+                          paddingHorizontal: spacing.sm,
+                        },
+                      ]}
+                      testID={`theme-option-${candidateMode}`}
+                    >
+                      <Text
+                        maxFontSizeMultiplier={typography.badge.maxFontSizeMultiplier}
+                        style={[
+                          typography.badge,
+                          { color: isActive ? palette.ctaText : palette.textPrimary },
+                        ]}
+                      >
+                        {THEME_MODE_LABELS[candidateMode]}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
             </View>
-          ) : null}
+
+            <View style={[styles.itemList, { gap: spacing.xs }]}>
+              {OVERFLOW_MENU_ITEMS.map((item) => (
+                <Pressable
+                  accessibilityHint={item.accessibilityHint}
+                  accessibilityLabel={item.label}
+                  accessibilityRole="menuitem"
+                  key={item.id}
+                  onPress={() => handleItemPress(item)}
+                  style={({ pressed }) => [
+                    styles.menuRow,
+                    {
+                      minHeight: touchTarget.minimum,
+                      borderRadius: radius.md,
+                      borderWidth: borderWidth.hairline,
+                      borderColor: palette.borderSubtle,
+                      backgroundColor: pressed ? palette.surfacePressed : palette.surfaceMuted,
+                      paddingHorizontal: spacing.md,
+                      paddingVertical: spacing.xs,
+                    },
+                  ]}
+                  testID={`more-item-${item.id}`}
+                >
+                  <Text
+                    maxFontSizeMultiplier={typography.bodyMedium.maxFontSizeMultiplier}
+                    style={[typography.bodyMedium, { color: palette.textPrimary }]}
+                  >
+                    {item.label}
+                  </Text>
+                  <Text
+                    maxFontSizeMultiplier={typography.caption.maxFontSizeMultiplier}
+                    style={[typography.caption, { color: palette.textSecondary }]}
+                  >
+                    {item.subtitle}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+
+            {selectedNotice ? (
+              <View
+                accessibilityLiveRegion="polite"
+                style={{
+                  borderRadius: radius.sm,
+                  borderWidth: borderWidth.hairline,
+                  borderColor: palette.borderControl,
+                  padding: spacing.sm,
+                }}
+                testID="more-menu-notice"
+              >
+                <Text
+                  maxFontSizeMultiplier={typography.caption.maxFontSizeMultiplier}
+                  style={[typography.caption, { color: palette.textSecondary }]}
+                >
+                  {selectedNotice}
+                </Text>
+              </View>
+            ) : null}
+          </ScrollView>
         </View>
       </View>
     </Modal>

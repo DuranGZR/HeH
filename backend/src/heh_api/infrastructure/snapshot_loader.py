@@ -2,7 +2,7 @@
 
 from importlib import resources
 
-from fastapi import Request
+from fastapi import HTTPException, Request
 
 from heh_api.domain.mapping import MappingSnapshot
 
@@ -20,5 +20,8 @@ def get_mapping_snapshot(request: Request) -> MappingSnapshot:
     """Return the preloaded immutable mapping snapshot stored on app state."""
     snapshot = getattr(request.app.state, "mapping_snapshot", None)
     if not isinstance(snapshot, MappingSnapshot):
-        raise RuntimeError("Mapping snapshot is not initialized on application state")
+        raise HTTPException(
+            status_code=503,
+            detail="Mapping snapshot is not initialized on application state",
+        )
     return snapshot

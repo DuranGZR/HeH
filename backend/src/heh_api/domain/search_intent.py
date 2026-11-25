@@ -6,7 +6,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Final, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from heh_api.domain.verification import (
     RouteStrategyKind,
@@ -15,6 +15,10 @@ from heh_api.domain.verification import (
 )
 
 MAX_QUERY_LENGTH: Final[int] = 500
+MAX_CRITERIA_COUNT: Final[int] = 64
+MAX_LOGIC_GROUPS: Final[int] = 32
+MAX_GROUP_CRITERION_IDS: Final[int] = 32
+MAX_CRITERION_VALUE_ITEMS: Final[int] = 32
 PARSER_VERSION: Final[str] = "1.0.0"
 CANONICAL_INTENT_SCHEMA_VERSION: Final[Literal["2.0.0"]] = "2.0.0"
 
@@ -26,7 +30,9 @@ CriterionField = Literal[
     "size",
     "gender",
     "price",
+    "material",
     "attribute",
+    "model",
     "sorting",
 ]
 CriterionOperator = Literal["eq", "in", "not_in", "gte", "lte", "between"]
@@ -49,8 +55,8 @@ def normalize_display_query(raw: str) -> str:
 def normalize_turkish_text(raw: str) -> str:
     """Lowercase text using Turkish locale rules (`İ -> i`, `I -> ı`) safely."""
     cleaned = normalize_display_query(raw)
-    mapped = cleaned.replace("\u0130", "i").replace("I", "ı")
-    return mapped.lower()
+    mapped = cleaned.replace("\u0130", "i").replace("I", "ı").lower()
+    return mapped.replace("i\u0307", "i")
 
 
 class PriceValue(BaseModel):
@@ -60,6 +66,8 @@ class PriceValue(BaseModel):
 
     min_amount: Decimal | None = None
     max_amount: Decimal | None = None
+    min_inclusive: bool = True
+    max_inclusive: bool = True
     currency: Literal["TRY"] = "TRY"
 
     @model_validator(mode="after")
@@ -94,6 +102,17 @@ class SearchCriterionNode(BaseModel):
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
     source_span: str | None = Field(default=None, max_length=160)
 
+    @model_validator(mode="after")
+    def _validate_field_value_types(self) -> "SearchCriterionNode":
+        if self.field == "price":
+            if not isinstance(self.value, PriceValue):
+                raise ValueError("price criterion requires PriceValue")
+        elif isinstance(self.value, PriceValue):
+            raise ValueError("PriceValue is only valid for field='price'")
+        if isinstance(self.value, tuple) and len(self.value) > MAX_CRITERION_VALUE_ITEMS:
+            raise ValueError(f"criterion tuple cannot exceed {MAX_CRITERION_VALUE_ITEMS} items")
+        return self
+
 
 class ConstraintGroup(BaseModel):
     """Boolean AST node grouping criterion IDs (`all_of`, `any_of`, `not`)."""
@@ -101,7 +120,7 @@ class ConstraintGroup(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     operator: LogicalOperator
-    criterion_ids: tuple[str, ...] = Field(min_length=1)
+    criterion_ids: tuple[str, ...] = Field(min_length=1, max_length=MAX_GROUP_CRITERION_IDS)
 
 
 class SearchIntentV2(BaseModel):
@@ -115,8 +134,20 @@ class SearchIntentV2(BaseModel):
     locale: Literal["tr-TR"] = "tr-TR"
     input_source: InputSourceKind = "text"
     category_key: str | None = Field(default=None, max_length=64)
-    criteria: tuple[SearchCriterionNode, ...] = ()
-    logic_groups: tuple[ConstraintGroup, ...] = ()
+    criteria: tuple[SearchCriterionNode, ...] = Field(default=(), max_length=MAX_CRITERIA_COUNT)
+    logic_groups: tuple[ConstraintGroup, ...] = Field(default=(), max_length=MAX_LOGIC_GROUPS)
+
+    @field_validator("raw_query", "normalized_query", mode="before")
+    @classmethod
+    def _strip_and_validate_non_blank_query(cls, raw_value: object) -> str:
+        if not isinstance(raw_value, str):
+            raise ValueError("query must be a string")
+        cleaned = normalize_display_query(raw_value)
+        if not cleaned:
+            raise ValueError("query must not be empty or whitespace")
+        if len(cleaned) > MAX_QUERY_LENGTH:
+            raise ValueError(f"query cannot exceed {MAX_QUERY_LENGTH} characters")
+        return cleaned
 
     @model_validator(mode="after")
     def _validate_ast_integrity(self) -> "SearchIntentV2":
@@ -169,7 +200,7 @@ class LinkResolution(BaseModel):
 
     @model_validator(mode="after")
     def _validate_resolution_safety(self) -> "LinkResolution":
-        validate_provider_url(self.url, self.route_strategy)
+        validate_provider_url(self.url, self.route_strategy, enforce_allowlisted_params=True)
 
         for item in self.applied_filters:
             if item.operator == "not_in":

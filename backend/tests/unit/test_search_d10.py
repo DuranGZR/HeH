@@ -167,3 +167,43 @@ def test_logs_never_leak_raw_query_text_tokens_or_secrets(
     assert "ali@example.com" not in scrubbed
     assert "tok123" not in scrubbed
     assert "pw123" not in scrubbed
+
+
+def test_redact_sensitive_text_masks_urls_bearer_plus_and_inline_queries() -> None:
+    """Ensure full provider URLs, complex Bearer tokens, and inline queries are scrubbed."""
+    raw_line = (
+        "https://www.trendyol.com/sr?q=gizli+laptop&prc=0-5000 "
+        "Authorization: Bearer abc+/=123._- "
+        'query_text="erkek siyah mont" raw_query="nike air" q=kulaklik'
+    )
+    scrubbed = redact_sensitive_text(raw_line)
+    assert "gizli+laptop" not in scrubbed
+    assert "prc=0-5000" not in scrubbed
+    assert "abc+/=123._-" not in scrubbed
+    assert "erkek siyah mont" not in scrubbed
+    assert "nike air" not in scrubbed
+    assert "q=kulaklik" not in scrubbed
+
+
+def test_resolve_rejects_blank_query_and_oversized_criteria_with_422() -> None:
+    """Prevent whitespace /resolve or oversized criteria AST payloads from causing 500 errors."""
+    with TestClient(create_app(Settings(env="test"))) as client:
+        parsed = client.post("/api/v1/search/parse", json={"text": "siyah mont"}).json()
+        blank_intent = dict(parsed["intent"])
+        blank_intent["raw_query"] = "   "
+        blank_intent["normalized_query"] = "   "
+
+        blank_resp = client.post(
+            "/api/v1/search/resolve",
+            json={"intent": blank_intent},
+        )
+        assert blank_resp.status_code == 422
+
+        base_criterion = parsed["intent"]["criteria"][0]
+        oversized_criteria = [{**base_criterion, "id": f"crit-{idx}"} for idx in range(65)]
+        oversized_intent = {**parsed["intent"], "criteria": oversized_criteria}
+        oversized_resp = client.post(
+            "/api/v1/search/resolve",
+            json={"intent": oversized_intent},
+        )
+        assert oversized_resp.status_code == 422

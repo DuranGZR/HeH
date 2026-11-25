@@ -10,15 +10,13 @@ import {
 } from "@expo/ui/swift-ui/modifiers";
 import { createWidget, type WidgetEnvironment } from "expo-widgets";
 
-import { buildWidgetSearchUri } from "@/services/widgets/deepLink";
-
 export interface HehWidgetProps {
   subtitle?: string;
 }
 
 /**
  * Isolated declarative iOS widget layout for `expo-widgets` SDK 58.
- * Contains zero business logic, network requests, or audio recording.
+ * IMPORTANT: `"widget";` compiles in isolation; never call module-scope JS imports inside.
  */
 function HehQuickSearchLayout(props: HehWidgetProps, environment: WidgetEnvironment) {
   "widget";
@@ -37,7 +35,7 @@ function HehQuickSearchLayout(props: HehWidgetProps, environment: WidgetEnvironm
         modifiers={[
           padding({ all: 14 }),
           containerBackground(bgColor, "widget"),
-          widgetURL(buildWidgetSearchUri("voice")),
+          widgetURL("heh://search?mode=voice"),
         ]}
       >
         <Text modifiers={[font({ size: 22, weight: "bold" }), foregroundStyle(primaryText)]}>
@@ -62,9 +60,9 @@ function HehQuickSearchLayout(props: HehWidgetProps, environment: WidgetEnvironm
       <HStack spacing={10}>
         <Link
           label="Sesli Ara"
-          destination={buildWidgetSearchUri("voice")}
+          destination="heh://search?mode=voice"
           modifiers={[
-            padding({ horizontal: 14, vertical: 10 }),
+            padding({ horizontal: 14, vertical: 12 }),
             background(pillBg),
             cornerRadius(12),
             foregroundStyle(primaryText),
@@ -72,9 +70,9 @@ function HehQuickSearchLayout(props: HehWidgetProps, environment: WidgetEnvironm
         />
         <Link
           label="Yazarak Ara"
-          destination={buildWidgetSearchUri("text")}
+          destination="heh://search?mode=text"
           modifiers={[
-            padding({ horizontal: 14, vertical: 10 }),
+            padding({ horizontal: 14, vertical: 12 }),
             background(pillBg),
             cornerRadius(12),
             foregroundStyle(primaryText),

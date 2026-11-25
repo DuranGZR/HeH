@@ -9,6 +9,7 @@ export interface TextSearchComposerProps {
   readonly onChangeQuery: (value: string) => void;
   readonly onSubmit: () => void;
   readonly errorMessage?: string | null;
+  readonly isBusy?: boolean;
 }
 
 /**
@@ -20,11 +21,12 @@ export function TextSearchComposer({
   onChangeQuery,
   onSubmit,
   errorMessage,
+  isBusy = false,
 }: TextSearchComposerProps) {
   const { palette, typography, spacing, radius, borderWidth, touchTarget, icons, hitSlop } =
     useHehTheme();
 
-  const canSubmit = canSubmitSearchQuery(query);
+  const canSubmit = canSubmitSearchQuery(query) && !isBusy;
 
   return (
     <View style={[styles.wrapper, { gap: spacing.sm }]} testID="text-search-composer">
@@ -57,6 +59,7 @@ export function TextSearchComposer({
           placeholder="Örn. 3000 TL altı siyah M erkek mont"
           placeholderTextColor={palette.textMuted}
           returnKeyType="search"
+          submitBehavior="submit"
           style={[
             typography.body,
             styles.inputField,
@@ -122,7 +125,7 @@ export function TextSearchComposer({
 
       <Pressable
         accessibilityHint="Yazdığın ölçütleri inceleme ve bağlantı oluşturma adımına taşır"
-        accessibilityLabel="Kriterleri çöz"
+        accessibilityLabel="Kriterleri Göster"
         accessibilityRole="button"
         accessibilityState={{ disabled: !canSubmit }}
         disabled={!canSubmit}

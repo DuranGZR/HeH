@@ -169,6 +169,16 @@ def main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
             return 1
+        if (
+            _DEFAULT_OPENAPI_DOC.is_file()
+            and _DEFAULT_OPENAPI_DOC.read_text(encoding="utf-8") != openapi_json
+        ):
+            print(
+                "[FAIL] docs/contracts/openapi.v1.json is out of sync with FastAPI OpenAPI. "
+                "Run `uv run python scripts/generate_contracts.py --write-docs` from backend/.",
+                file=sys.stderr,
+            )
+            return 1
         print("[PASS] OpenAPI <-> TypeScript and MappingSnapshot schema parity verified.")
         return 0
 
