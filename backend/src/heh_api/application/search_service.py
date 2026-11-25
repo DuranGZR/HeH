@@ -3,21 +3,18 @@
 import re
 from decimal import Decimal, InvalidOperation
 from typing import Literal
-from urllib.parse import quote, urlencode
 
 from heh_api.domain.mapping import FacetMappingEntry, MappingSnapshot, ShowcaseCategoryMapping
 from heh_api.domain.search_intent import (
     PARSER_VERSION,
     ConstraintGroup,
-    LinkFilterItem,
-    LinkResolution,
     PriceValue,
     SearchCriterionNode,
     SearchIntentV2,
     normalize_display_query,
     normalize_turkish_text,
 )
-from heh_api.domain.verification import RouteStrategyKind
+from heh_api.infrastructure.trendyol.url_builder import TrendyolURLBuilder
 from heh_api.schemas.search import (
     CategoryCapabilitySummary,
     ProviderCapabilitiesResponse,
@@ -27,10 +24,7 @@ from heh_api.schemas.search import (
     SearchResolveResponse,
 )
 
-_SPONSORED_NOTICE = (
-    "Doğrulanan ölçütler web kanıtına dayanır; mobil uygulama doğrulaması beklenir ve "
-    "Trendyol'daki Sponsorlu alanlar fiyat aralığı dışında kalabilir."
-)
+_URL_BUILDER = TrendyolURLBuilder()
 
 _RANGE_PATTERN = re.compile(r"\b(\d+(?:[.,]\d+)?)\s*(bin)?\s*-\s*(\d+(?:[.,]\d+)?)\s*(bin)?\b")
 _UPPER_PATTERN = re.compile(
@@ -39,7 +33,7 @@ _UPPER_PATTERN = re.compile(
 _LOWER_PATTERN = re.compile(
     r"(?:\b(\d+(?:[.,]\d+)?)\s*(bin)?\s*(?:tl)?\s*[üu]st[üu]\b|\ben\s+az\s+(\d+(?:[.,]\d+)?)\s*(bin)?\b)"
 )
-_NEGATION_SUFFIX_PATTERN = re.compile(r"(?:\s+(?:olmasın|hariç|değil))\b")
+_NEGATION_SUFFIX_PATTERN = re.compile(r"(?:\s+(?:olmasın|hariç|değil|dışında))\b")
 
 
 def _parse_tr_number(raw_num: str, multiplier: str | None) -> Decimal | None:
@@ -120,217 +114,6 @@ def _match_facet_entries(
         else:
             positive.append(entry)
     return positive, negated
-
-
-def _format_price_param(price: PriceValue) -> str:
-    low_str = str(int(price.min_amount)) if price.min_amount is not None else "0"
-    high_str = str(int(price.max_amount)) if price.max_amount is not None else "*"
-    return f"{low_str}-{high_str}"
-
-
-def _build_trendyol_resolution(intent: SearchIntentV2, snapshot: MappingSnapshot) -> LinkResolution:
-    """Resolve an edited or parsed SearchIntent v2 AST strictly from in-memory snapshot."""
-    category = snapshot.find_category_by_key(intent.category_key)
-    applied: list[LinkFilterItem] = []
-    query_only: list[LinkFilterItem] = []
-    unsupported: list[LinkFilterItem] = []
-    query_params: list[tuple[str, str]] = []
-
-    if category is not None:
-        query_params.append(("wc", category.wc_id))
-        if category.wg_id is not None:
-            query_params.append(("wg", category.wg_id))
-
-    brand_entries: list[FacetMappingEntry] = []
-    color_entries: list[FacetMappingEntry] = []
-    size_entries: list[FacetMappingEntry] = []
-    price_value: PriceValue | None = None
-
-    for criterion in intent.criteria:
-        if criterion.operator == "not_in":
-            unsupported.append(
-                LinkFilterItem(
-                    criterion_id=criterion.id,
-                    field=criterion.field,
-                    label=criterion.display_label,
-                    operator=criterion.operator,
-                    status="UNSUPPORTED",
-                    reason="Trendyol yan menü ve URL şemasında negatif dışlama desteği yok.",
-                )
-            )
-            continue
-
-        if criterion.field == "category" and category is not None:
-            applied.append(
-                LinkFilterItem(
-                    criterion_id=criterion.id,
-                    field="category",
-                    label=category.display_name,
-                    operator="eq",
-                    status=category.category_status,
-                    url_param="wc",
-                    url_value=category.wc_id,
-                    reason="Vitrin kategori kimliği web gözlemi ile doğrulandı.",
-                    evidence_ref=category.evidence_ref,
-                )
-            )
-            continue
-
-        if criterion.field == "price" and isinstance(criterion.value, PriceValue):
-            price_value = criterion.value
-            prc_param = _format_price_param(price_value)
-            applied.append(
-                LinkFilterItem(
-                    criterion_id=criterion.id,
-                    field="price",
-                    label=criterion.display_label,
-                    operator=criterion.operator,
-                    status="WEB_VERIFIED_PENDING_MOBILE",
-                    url_param="prc",
-                    url_value=prc_param,
-                    reason="Fiyat aralığı Trendyol prc parametresine bağlandı.",
-                    evidence_ref="evidence/W1/d02-url-observations.json",
-                )
-            )
-            continue
-
-        if criterion.field == "brand" and category is not None:
-            requested = (
-                list(criterion.value)
-                if isinstance(criterion.value, tuple)
-                else [str(criterion.value)]
-            )
-            matched_brands = [
-                entry
-                for req in requested
-                for entry in category.brands
-                if entry.canonical_key == normalize_turkish_text(req)
-            ]
-            if len(matched_brands) == len(requested) and matched_brands:
-                brand_entries.extend(matched_brands)
-                joined_ids = ",".join(item.url_value for item in matched_brands)
-                applied.append(
-                    LinkFilterItem(
-                        criterion_id=criterion.id,
-                        field="brand",
-                        label=criterion.display_label,
-                        operator=criterion.operator,
-                        status=matched_brands[0].status,
-                        url_param="wb",
-                        url_value=joined_ids,
-                        reason="Marka kimliği web gözlemiyle eşlendi.",
-                        evidence_ref=matched_brands[0].evidence_ref,
-                    )
-                )
-                continue
-
-        if criterion.field == "color":
-            pool = (
-                category.colors
-                if category is not None and category.colors
-                else snapshot.global_colors
-            )
-            key = normalize_turkish_text(str(criterion.value))
-            color_match = next((c for c in pool if c.canonical_key == key), None)
-            if color_match is not None:
-                color_entries.append(color_match)
-                applied.append(
-                    LinkFilterItem(
-                        criterion_id=criterion.id,
-                        field="color",
-                        label=criterion.display_label,
-                        operator=criterion.operator,
-                        status=color_match.status,
-                        url_param=color_match.url_param,
-                        url_value=color_match.url_value,
-                        reason="Renk kodu wcl parametresiyle doğrulandı.",
-                        evidence_ref=color_match.evidence_ref,
-                    )
-                )
-                continue
-
-        if criterion.field == "size" and category is not None:
-            key = normalize_turkish_text(str(criterion.value))
-            size_match = next((s for s in category.sizes if s.canonical_key == key), None)
-            if size_match is not None:
-                size_entries.append(size_match)
-                applied.append(
-                    LinkFilterItem(
-                        criterion_id=criterion.id,
-                        field="size",
-                        label=criterion.display_label,
-                        operator=criterion.operator,
-                        status=size_match.status,
-                        url_param=size_match.url_param,
-                        url_value=size_match.url_value,
-                        reason="Beden parametresi vr kodu ile doğrulandı.",
-                        evidence_ref=size_match.evidence_ref,
-                    )
-                )
-                continue
-
-        query_only.append(
-            LinkFilterItem(
-                criterion_id=criterion.id,
-                field=criterion.field,
-                label=criterion.display_label,
-                operator=criterion.operator,
-                status="QUERY_ONLY",
-                reason="Doğrulanmış parametre yok; q arama metniyle aktarılır.",
-            )
-        )
-
-    # Choose verified -x- facet route only for clean single-brand + category showcase case,
-    # otherwise construct safe canonical /sr?... query string.
-    route_strategy: RouteStrategyKind = "canonical_search_query"
-    if (
-        category is not None
-        and category.wg_id is None
-        and price_value is None
-        and len(brand_entries) == 1
-        and not color_entries
-        and not size_entries
-        and not query_only
-    ):
-        route_strategy = "verified_facet_path"
-        single_brand = brand_entries[0]
-        cat_slug = category.category_key.replace("_", "-")
-        raw_slug = (
-            f"{single_brand.canonical_key}-{cat_slug}-x-b{single_brand.url_value}-c{category.wc_id}"
-        )
-        slug = quote(raw_slug, safe="-")
-        suffix = f"?{urlencode({'prc': _format_price_param(price_value)})}" if price_value else ""
-        resolved_url = f"https://www.trendyol.com/{slug}{suffix}"
-    else:
-        if category is None or query_only or not applied:
-            query_params.append(("q", intent.raw_query))
-        if brand_entries:
-            query_params.append(("wb", ",".join(item.url_value for item in brand_entries)))
-        if color_entries:
-            query_params.append(("wcl", color_entries[0].url_value))
-        if size_entries:
-            query_params.append(("vr", size_entries[0].url_value))
-        if price_value is not None:
-            query_params.append(("prc", _format_price_param(price_value)))
-        resolved_url = f"https://www.trendyol.com/sr?{urlencode(query_params)}"
-
-    warning_level: Literal["none", "partial", "critical"] = "none"
-    if unsupported or query_only:
-        warning_level = "partial"
-    if not applied and unsupported:
-        warning_level = "critical"
-
-    return LinkResolution(
-        provider="trendyol",
-        url=resolved_url,
-        route_strategy=route_strategy,
-        mapping_version=snapshot.version,
-        applied_filters=tuple(applied),
-        query_only=tuple(query_only),
-        unsupported=tuple(unsupported),
-        warning_level=warning_level,
-        verification_notice=_SPONSORED_NOTICE,
-    )
 
 
 def parse_search_query(
@@ -456,7 +239,8 @@ def parse_search_query(
                 )
             )
 
-    if not criteria:
+    if category is None and not any(c.field == "attribute" for c in criteria):
+        # Preserve long-tail search phrases explicitly so UI surfaces QUERY_ONLY transparently.
         criteria.append(
             SearchCriterionNode(
                 id="attr-query-1",
@@ -477,7 +261,7 @@ def parse_search_query(
         criteria=tuple(criteria),
         logic_groups=tuple(logic_groups),
     )
-    resolution = _build_trendyol_resolution(intent, snapshot)
+    resolution = _URL_BUILDER.build_resolution(intent, snapshot)
 
     return SearchParseResponse(
         request_id=request_id,
@@ -497,7 +281,7 @@ def resolve_search_intent(
     request_id: str,
 ) -> SearchResolveResponse:
     """Recompute LinkResolution deterministically from edited SearchIntentV2 AST."""
-    resolution = _build_trendyol_resolution(request.intent, snapshot)
+    resolution = _URL_BUILDER.build_resolution(request.intent, snapshot)
     return SearchResolveResponse(
         request_id=request_id,
         intent=request.intent,

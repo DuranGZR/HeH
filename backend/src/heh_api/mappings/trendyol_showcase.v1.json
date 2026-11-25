@@ -1,6 +1,6 @@
 {
   "provider": "trendyol",
-  "version": "2026.11.24.1",
+  "version": "2026.11.25.1",
   "long_tail_policy": "prc_plus_q",
   "global_colors": [
     {
@@ -10,12 +10,16 @@
       "url_param": "wcl",
       "url_value": "14",
       "status": "WEB_VERIFIED_PENDING_MOBILE",
-      "evidence_ref": "evidence/W1/d03-url-observations.json"
+      "evidence_ref": "evidence/W1/d03-url-observations.json",
+      "verified_platforms": ["web"],
+      "verified_at": "2026-11-24T17:45:00Z",
+      "expires_at": null
     }
   ],
   "categories": [
     {
       "category_key": "erkek_mont",
+      "ontology_id": "apparel.outerwear.mens_coat",
       "display_name": "Erkek Mont",
       "aliases": ["erkek mont", "mont", "kaban"],
       "wc_id": "118",
@@ -24,6 +28,9 @@
       "negative_supported": false,
       "category_status": "WEB_VERIFIED_PENDING_MOBILE",
       "evidence_ref": "evidence/W1/d03-url-observations.json",
+      "verified_platforms": ["web"],
+      "verified_at": "2026-11-24T17:45:00Z",
+      "expires_at": null,
       "brands": [
         {
           "canonical_key": "mavi",
@@ -32,7 +39,10 @@
           "url_param": "wb",
           "url_value": "43",
           "status": "WEB_VERIFIED_PENDING_MOBILE",
-          "evidence_ref": "evidence/W1/d03-url-observations.json"
+          "evidence_ref": "evidence/W1/d03-url-observations.json",
+          "verified_platforms": ["web"],
+          "verified_at": "2026-11-24T17:45:00Z",
+          "expires_at": null
         }
       ],
       "colors": [
@@ -43,7 +53,10 @@
           "url_param": "wcl",
           "url_value": "14",
           "status": "WEB_VERIFIED_PENDING_MOBILE",
-          "evidence_ref": "evidence/W1/d03-url-observations.json"
+          "evidence_ref": "evidence/W1/d03-url-observations.json",
+          "verified_platforms": ["web"],
+          "verified_at": "2026-11-24T17:45:00Z",
+          "expires_at": null
         }
       ],
       "sizes": [
@@ -54,12 +67,16 @@
           "url_param": "vr",
           "url_value": "size|group-m",
           "status": "WEB_VERIFIED_PENDING_MOBILE",
-          "evidence_ref": "evidence/W1/d03-url-observations.json"
+          "evidence_ref": "evidence/W1/d03-url-observations.json",
+          "verified_platforms": ["web"],
+          "verified_at": "2026-11-24T17:45:00Z",
+          "expires_at": null
         }
       ]
     },
     {
       "category_key": "bluetooth_kulaklik",
+      "ontology_id": "electronics.audio.bluetooth_headphones",
       "display_name": "Bluetooth Kulaklık",
       "aliases": ["bluetooth kulaklık", "bluetooth kulaklik", "kulaklık", "kulaklik"],
       "wc_id": "108626",
@@ -68,6 +85,9 @@
       "negative_supported": false,
       "category_status": "WEB_VERIFIED_PENDING_MOBILE",
       "evidence_ref": "evidence/W1/d03-url-observations.json",
+      "verified_platforms": ["web"],
+      "verified_at": "2026-11-24T17:45:00Z",
+      "expires_at": null,
       "brands": [
         {
           "canonical_key": "sony",
@@ -76,7 +96,10 @@
           "url_param": "wb",
           "url_value": "795",
           "status": "WEB_VERIFIED_PENDING_MOBILE",
-          "evidence_ref": "evidence/W1/d03-url-observations.json"
+          "evidence_ref": "evidence/W1/d03-url-observations.json",
+          "verified_platforms": ["web"],
+          "verified_at": "2026-11-24T17:45:00Z",
+          "expires_at": null
         },
         {
           "canonical_key": "jbl",
@@ -85,7 +108,10 @@
           "url_param": "wb",
           "url_value": "102285",
           "status": "WEB_VERIFIED_PENDING_MOBILE",
-          "evidence_ref": "evidence/W1/d03-url-observations.json"
+          "evidence_ref": "evidence/W1/d03-url-observations.json",
+          "verified_platforms": ["web"],
+          "verified_at": "2026-11-24T17:45:00Z",
+          "expires_at": null
         }
       ],
       "colors": [
@@ -96,13 +122,17 @@
           "url_param": "wcl",
           "url_value": "14",
           "status": "WEB_VERIFIED_PENDING_MOBILE",
-          "evidence_ref": "evidence/W1/d03-url-observations.json"
+          "evidence_ref": "evidence/W1/d03-url-observations.json",
+          "verified_platforms": ["web"],
+          "verified_at": "2026-11-24T17:45:00Z",
+          "expires_at": null
         }
       ],
       "sizes": []
     },
     {
       "category_key": "spor_ayakkabi",
+      "ontology_id": "footwear.athletic.sneakers",
       "display_name": "Spor Ayakkabı",
       "aliases": ["spor ayakkabı", "spor ayakkabi", "ayakkabı", "ayakkabi"],
       "wc_id": "109",
@@ -111,6 +141,9 @@
       "negative_supported": false,
       "category_status": "WEB_VERIFIED_PENDING_MOBILE",
       "evidence_ref": "evidence/W1/d03-url-observations.json",
+      "verified_platforms": ["web"],
+      "verified_at": "2026-11-24T17:45:00Z",
+      "expires_at": null,
       "brands": [
         {
           "canonical_key": "nike",
@@ -119,7 +152,10 @@
           "url_param": "wb",
           "url_value": "44",
           "status": "WEB_VERIFIED_PENDING_MOBILE",
-          "evidence_ref": "evidence/W1/d03-url-observations.json"
+          "evidence_ref": "evidence/W1/d03-url-observations.json",
+          "verified_platforms": ["web"],
+          "verified_at": "2026-11-24T17:45:00Z",
+          "expires_at": null
         },
         {
           "canonical_key": "puma",
@@ -128,7 +164,10 @@
           "url_param": "wb",
           "url_value": "160",
           "status": "WEB_VERIFIED_PENDING_MOBILE",
-          "evidence_ref": "evidence/W1/d03-url-observations.json"
+          "evidence_ref": "evidence/W1/d03-url-observations.json",
+          "verified_platforms": ["web"],
+          "verified_at": "2026-11-24T17:45:00Z",
+          "expires_at": null
         }
       ],
       "colors": [
@@ -139,7 +178,10 @@
           "url_param": "wcl",
           "url_value": "14",
           "status": "WEB_VERIFIED_PENDING_MOBILE",
-          "evidence_ref": "evidence/W1/d03-url-observations.json"
+          "evidence_ref": "evidence/W1/d03-url-observations.json",
+          "verified_platforms": ["web"],
+          "verified_at": "2026-11-24T17:45:00Z",
+          "expires_at": null
         }
       ],
       "sizes": [
@@ -150,12 +192,16 @@
           "url_param": "vr",
           "url_value": "size|42",
           "status": "WEB_VERIFIED_PENDING_MOBILE",
-          "evidence_ref": "evidence/W1/d03-url-observations.json"
+          "evidence_ref": "evidence/W1/d03-url-observations.json",
+          "verified_platforms": ["web"],
+          "verified_at": "2026-11-24T17:45:00Z",
+          "expires_at": null
         }
       ]
     },
     {
       "category_key": "laptop",
+      "ontology_id": "electronics.computing.laptop",
       "display_name": "Laptop",
       "aliases": ["laptop", "dizüstü", "notebook"],
       "wc_id": "103108",
@@ -164,6 +210,9 @@
       "negative_supported": false,
       "category_status": "WEB_VERIFIED_PENDING_MOBILE",
       "evidence_ref": "evidence/W1/d03-url-observations.json",
+      "verified_platforms": ["web"],
+      "verified_at": "2026-11-24T17:45:00Z",
+      "expires_at": null,
       "brands": [
         {
           "canonical_key": "lenovo",
@@ -172,7 +221,10 @@
           "url_param": "wb",
           "url_value": "102323",
           "status": "WEB_VERIFIED_PENDING_MOBILE",
-          "evidence_ref": "evidence/W1/d03-url-observations.json"
+          "evidence_ref": "evidence/W1/d03-url-observations.json",
+          "verified_platforms": ["web"],
+          "verified_at": "2026-11-24T17:45:00Z",
+          "expires_at": null
         },
         {
           "canonical_key": "asus",
@@ -181,7 +233,10 @@
           "url_param": "wb",
           "url_value": "101606",
           "status": "WEB_VERIFIED_PENDING_MOBILE",
-          "evidence_ref": "evidence/W1/d03-url-observations.json"
+          "evidence_ref": "evidence/W1/d03-url-observations.json",
+          "verified_platforms": ["web"],
+          "verified_at": "2026-11-24T17:45:00Z",
+          "expires_at": null
         }
       ],
       "colors": [],
@@ -189,6 +244,7 @@
     },
     {
       "category_key": "cep_telefonu",
+      "ontology_id": "electronics.mobile.smartphone",
       "display_name": "Cep Telefonu",
       "aliases": ["cep telefonu", "telefon", "akıllı telefon"],
       "wc_id": "103498",
@@ -197,6 +253,9 @@
       "negative_supported": false,
       "category_status": "WEB_VERIFIED_PENDING_MOBILE",
       "evidence_ref": "evidence/W1/d03-url-observations.json",
+      "verified_platforms": ["web"],
+      "verified_at": "2026-11-24T17:45:00Z",
+      "expires_at": null,
       "brands": [
         {
           "canonical_key": "samsung",
@@ -205,7 +264,10 @@
           "url_param": "wb",
           "url_value": "794",
           "status": "WEB_VERIFIED_PENDING_MOBILE",
-          "evidence_ref": "evidence/W1/d03-url-observations.json"
+          "evidence_ref": "evidence/W1/d03-url-observations.json",
+          "verified_platforms": ["web"],
+          "verified_at": "2026-11-24T17:45:00Z",
+          "expires_at": null
         },
         {
           "canonical_key": "apple",
@@ -214,7 +276,10 @@
           "url_param": "wb",
           "url_value": "101470",
           "status": "WEB_VERIFIED_PENDING_MOBILE",
-          "evidence_ref": "evidence/W1/d03-url-observations.json"
+          "evidence_ref": "evidence/W1/d03-url-observations.json",
+          "verified_platforms": ["web"],
+          "verified_at": "2026-11-24T17:45:00Z",
+          "expires_at": null
         }
       ],
       "colors": [
@@ -225,7 +290,10 @@
           "url_param": "wcl",
           "url_value": "14",
           "status": "WEB_VERIFIED_PENDING_MOBILE",
-          "evidence_ref": "evidence/W1/d03-url-observations.json"
+          "evidence_ref": "evidence/W1/d03-url-observations.json",
+          "verified_platforms": ["web"],
+          "verified_at": "2026-11-24T17:45:00Z",
+          "expires_at": null
         }
       ],
       "sizes": []
