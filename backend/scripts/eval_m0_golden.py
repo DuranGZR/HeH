@@ -520,6 +520,12 @@ def evaluate_golden(
     )
 
 
+normalize_price_bounds = _normalize_price_tuple
+FieldCounts = _Counts
+extract_intent_predictions = _extract_predictions
+compute_percentile = _percentile
+
+
 def _badge(passed: bool) -> str:
     return "PASS" if passed else "FAIL"
 
