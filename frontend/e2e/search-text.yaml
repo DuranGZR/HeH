@@ -1,0 +1,73 @@
+appId: com.heh.app
+name: "W5 Gate-VSlice-Text: End-to-End Natural Turkish Text Search Flow"
+tags:
+  - w5
+  - vslice-text
+  - gate
+---
+# 1. Launch app cleanly in guest mode (no bottom tab bar, mic never auto-starts)
+- launchApp:
+    clearState: true
+- assertVisible: "heh."
+- assertVisible: "Mikrofon yalnızca sen dokunduğunda açılır."
+
+# 2. Switch inline to text entry mode and submit natural Turkish search (1-RTT parse)
+- tapOn:
+    id: "home-text-button"
+- assertVisible:
+    id: "text-search-prompts"
+- tapOn:
+    id: "text-prompt-chip-1" # "Sony veya JBL bluetooth kulaklık"
+- tapOn:
+    id: "text-search-submit"
+
+# 3. Verify AST Review (1-RTT parse -> OR group preserved, honest Web status badge)
+- assertVisible:
+    id: "criteria-review-panel"
+- assertVisible:
+    id: "criteria-group-any-of-group-any-1"
+- assertNotVisible:
+    text: "Filtre uygulandı"
+
+# 4. Edit-only /resolve: shrink Sony veya JBL -> Sony only (zero JBL leak)
+- tapOn:
+    id: "remove-or-option-brand-or-1-jbl"
+- assertNotVisible:
+    id: "remove-or-option-brand-or-1-jbl"
+- assertVisible:
+    id: "open-trendyol-cta"
+
+# 5. Navigate back to search text mode for negation + inline price edit check
+- tapOn: "Ana Ekrana Dön"
+- tapOn:
+    id: "home-text-button"
+- tapOn:
+    id: "text-search-input"
+- inputText: "3000 altı nike olmasın erkek mont"
+- tapOn:
+    id: "text-search-submit"
+- assertVisible:
+    id: "criteria-group-not"
+- assertVisible: "Kısmi aramayı aç"
+- assertVisible:
+    id: "redirect-partial-warning"
+
+# 6. Inline price range edit -> edit-only /resolve
+- tapOn:
+    id: "edit-price-price-1"
+- tapOn:
+    id: "price-min-input-price-1"
+- inputText: "1500"
+- tapOn:
+    id: "price-max-input-price-1"
+- inputText: "2500"
+- tapOn:
+    id: "price-apply-price-1"
+- assertVisible: "1500-2500 TL"
+
+# 7. Remove unsupported negation -> explicit Trendyol CTA transition
+- tapOn:
+    id: "remove-criterion-brand-not-1"
+- assertVisible: "Trendyol'da göster"
+- tapOn:
+    id: "open-trendyol-cta"

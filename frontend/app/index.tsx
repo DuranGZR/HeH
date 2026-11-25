@@ -53,6 +53,7 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView
+      edges={["top", "right", "bottom", "left"]}
       style={[styles.screen, { backgroundColor: palette.background }]}
       testID="home-screen"
     >
@@ -179,6 +180,7 @@ export default function HomeScreen() {
                   Aradığını yaz
                 </Text>
                 <TextSearchComposer
+                  autoFocus
                   onChangeQuery={setQueryText}
                   onSubmit={openTextModeOrSubmit}
                   query={queryText}

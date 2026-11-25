@@ -1,6 +1,7 @@
 import type {
   LinkFilterItem,
   LinkResolution,
+  SearchApiTransport,
   SearchCriterionNodeInput,
   SearchIntentV2Input,
   SearchIntentV2Output,
@@ -10,13 +11,7 @@ import type {
   SearchResolveResponse,
 } from "@/api";
 
-export interface SearchApiTransport {
-  parseSearch(payload: SearchParseRequest, signal?: AbortSignal): Promise<SearchParseResponse>;
-  resolveSearch(
-    payload: SearchResolveRequest,
-    signal?: AbortSignal,
-  ): Promise<SearchResolveResponse>;
-}
+export type { SearchApiTransport } from "@/api";
 
 const DEMO_NOTICE =
   "Doğrulanan ölçütler web kanıtına dayanır; mobil uygulama doğrulaması beklenir ve Trendyol'daki Sponsorlu alanlar fiyat aralığı dışında kalabilir.";
@@ -249,7 +244,23 @@ export class MockSearchTransport implements SearchApiTransport {
       });
     }
 
-    if (lowered.includes("siyah")) {
+    if (lowered.includes("siyah") && lowered.includes("beyaz")) {
+      criteria.push({
+        id: "color-or-1",
+        field: "color",
+        operator: "in",
+        value: ["siyah", "beyaz"],
+        display_label: "Siyah veya Beyaz",
+      });
+    } else if (lowered.includes("siyah") && lowered.includes("mavi")) {
+      criteria.push({
+        id: "color-or-1",
+        field: "color",
+        operator: "in",
+        value: ["siyah", "mavi"],
+        display_label: "Siyah veya Mavi",
+      });
+    } else if (lowered.includes("siyah")) {
       criteria.push({
         id: "color-1",
         field: "color",
@@ -259,7 +270,25 @@ export class MockSearchTransport implements SearchApiTransport {
       });
     }
 
-    if (lowered.includes("m beden") && categoryKey === "erkek_mont") {
+    if (lowered.includes("sony") && lowered.includes("jbl")) {
+      criteria.push({
+        id: "brand-or-1",
+        field: "brand",
+        operator: "in",
+        value: ["sony", "jbl"],
+        display_label: "Sony veya JBL",
+      });
+    } else if (lowered.includes("sony")) {
+      criteria.push({
+        id: "brand-1",
+        field: "brand",
+        operator: "eq",
+        value: "sony",
+        display_label: "Sony",
+      });
+    }
+
+    if ((/\bm\b/.test(lowered) || lowered.includes("m beden")) && categoryKey === "erkek_mont") {
       criteria.push({
         id: "size-1",
         field: "size",
@@ -279,6 +308,13 @@ export class MockSearchTransport implements SearchApiTransport {
       });
     }
 
+    const logicGroups: SearchIntentV2Output["logic_groups"] = criteria
+      .filter((c) => c.operator === "in" || c.operator === "not_in")
+      .map((c) => ({
+        operator: c.operator === "not_in" ? ("not" as const) : ("any_of" as const),
+        criterion_ids: [c.id],
+      }));
+
     const intent: SearchIntentV2Output = {
       schema_version: "2.0.0",
       raw_query: raw,
@@ -287,7 +323,7 @@ export class MockSearchTransport implements SearchApiTransport {
       input_source: payload.input_source ?? "text",
       category_key: categoryKey,
       criteria: criteria as SearchIntentV2Output["criteria"],
-      logic_groups: [],
+      logic_groups: logicGroups,
     };
 
     return {

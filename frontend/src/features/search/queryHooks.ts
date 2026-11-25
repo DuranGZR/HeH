@@ -1,63 +1,76 @@
-import { Linking } from "react-native";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useMutation,
+  useQuery,
+  type QueryClient,
+  type UseQueryResult,
+} from "@tanstack/react-query";
+import { QueryClientContext } from "@tanstack/react-query";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 import {
+  HehApiClient,
   HehApiError,
+  createClientRequestId,
+  createHehQueryClient,
+  hehQueryKeys,
+  isAbortError,
   type LinkFilterItem,
   type LinkResolution,
+  type ProviderCapabilitiesResponse,
+  type ReadinessResponse,
+  type SearchApiTransport,
   type SearchIntentV2Output,
   type SearchParseResponse,
+  type SearchResolveRequest,
+  type SearchResolveResponse,
 } from "@/api";
 import type { CriterionVisualStatus } from "@/theme";
 
-import { MockSearchTransport, toInputIntent, type SearchApiTransport } from "./demoFixtures";
+import {
+  buildCriteriaGroupViewModels,
+  removeCriterionFromIntent,
+  removeOptionFromOrIntent,
+  updatePriceCriterionInIntent,
+  type CriteriaChipViewModel,
+  type CriteriaGroupViewModel,
+} from "./criteriaAst";
+import { MockSearchTransport, toInputIntent } from "./demoFixtures";
+import {
+  launchSafeProviderRedirect,
+  validateExternalProviderUrl,
+  type SafeRedirectDeps,
+} from "./externalRedirect";
+
+export {
+  launchSafeProviderRedirect,
+  validateExternalProviderUrl,
+  type ExternalRedirectResult,
+  type SafeRedirectDeps,
+} from "./externalRedirect";
+
+export type {
+  CriteriaChipViewModel,
+  CriteriaGroupItemViewModel,
+  CriteriaGroupKind,
+  CriteriaGroupViewModel,
+  OrOptionChip,
+} from "./criteriaAst";
 
 export type SearchFlowPhase =
   "idle" | "parsing" | "reviewing" | "resolving" | "opening_external" | "error";
 
-export interface CriteriaChipViewModel {
-  readonly criterionId: string;
-  readonly field: LinkFilterItem["field"];
-  readonly label: string;
-  readonly status: LinkFilterItem["status"];
-  readonly visualStatus: CriterionVisualStatus;
-  readonly badgeLabel: string;
-  readonly reason: string;
-}
-
-const ALLOWED_EXTERNAL_HOSTS = new Set(["www.trendyol.com"]);
-
-function hasForbiddenControlOrSpace(rawUrl: string): boolean {
-  if (/\s/.test(rawUrl)) {
-    return true;
+/** Resolve live `HehApiClient` unless demo mock mode is explicitly enabled via env or options. */
+export function resolveDefaultSearchTransport(options?: {
+  readonly useMock?: boolean;
+  readonly baseUrl?: string;
+}): SearchApiTransport {
+  const envMockFlag =
+    typeof process !== "undefined" ? process.env.EXPO_PUBLIC_HEH_USE_MOCK : undefined;
+  const shouldUseMock = options?.useMock ?? envMockFlag === "1";
+  if (shouldUseMock) {
+    return new MockSearchTransport();
   }
-  for (let i = 0; i < rawUrl.length; i += 1) {
-    const code = rawUrl.charCodeAt(i);
-    if (code < 32 || code === 127) {
-      return true;
-    }
-  }
-  return false;
-}
-
-/** Enforce HTTPS, allowlisted host, credential/port/fragment/control-char safety client-side. */
-export function validateExternalProviderUrl(rawUrl: string): boolean {
-  if (hasForbiddenControlOrSpace(rawUrl)) {
-    return false;
-  }
-  try {
-    const parsed = new URL(rawUrl);
-    return (
-      parsed.protocol === "https:" &&
-      ALLOWED_EXTERNAL_HOSTS.has(parsed.hostname.toLowerCase()) &&
-      parsed.username === "" &&
-      parsed.password === "" &&
-      parsed.port === "" &&
-      parsed.hash === ""
-    );
-  } catch {
-    return false;
-  }
+  return new HehApiClient(options?.baseUrl ? { baseUrl: options.baseUrl } : undefined);
 }
 
 /**
@@ -95,6 +108,7 @@ export function buildCriteriaViewModels(
       criterionId: item.criterion_id,
       field: item.field,
       label: item.label,
+      operator: item.operator,
       status: item.status,
       visualStatus,
       badgeLabel,
@@ -137,6 +151,21 @@ function mapFlowErrorMessage(err: unknown): string {
   return "Bağlantı yok. Tekrar dene.";
 }
 
+export function buildSafeRedirectDeps(options?: UseSearchFlowOptions): SafeRedirectDeps {
+  if (options?.redirectDeps) {
+    return options.redirectDeps;
+  }
+  if (options?.openUrl) {
+    const openUrl = options.openUrl;
+    return {
+      canOpenUrl: async () => true,
+      openPrimaryUrl: openUrl,
+      openFallbackUrl: openUrl,
+    };
+  }
+  return {};
+}
+
 export function selectPrimaryCtaLabel(resolution: LinkResolution): string {
   if (resolution.warning_level === "critical" || (resolution.unsupported ?? []).length > 0) {
     return "Kısmi aramayı aç";
@@ -144,9 +173,107 @@ export function selectPrimaryCtaLabel(resolution: LinkResolution): string {
   return "Trendyol'da göster";
 }
 
+function linkAbortSignals(
+  primary: AbortSignal,
+  secondary?: AbortSignal,
+): {
+  readonly signal: AbortSignal;
+  readonly cleanup: () => void;
+} {
+  if (!secondary) {
+    return { signal: primary, cleanup: () => undefined };
+  }
+  const bridge = new AbortController();
+  const abortBridge = (): void => bridge.abort();
+  if (primary.aborted || secondary.aborted) {
+    bridge.abort();
+    return { signal: bridge.signal, cleanup: () => undefined };
+  }
+  primary.addEventListener("abort", abortBridge, { once: true });
+  secondary.addEventListener("abort", abortBridge, { once: true });
+  return {
+    signal: bridge.signal,
+    cleanup: () => {
+      primary.removeEventListener("abort", abortBridge);
+      secondary.removeEventListener("abort", abortBridge);
+    },
+  };
+}
+
+function useResolvedQueryClient(explicitClient?: QueryClient): QueryClient {
+  const contextClient = useContext(QueryClientContext);
+  const [fallbackClient] = useState<QueryClient>(() => createHehQueryClient());
+  const isUsingFallback = !explicitClient && !contextClient;
+
+  useEffect(() => {
+    if (!isUsingFallback) {
+      return undefined;
+    }
+    return () => {
+      fallbackClient.clear();
+    };
+  }, [fallbackClient, isUsingFallback]);
+
+  return explicitClient ?? contextClient ?? fallbackClient;
+}
+
+/** Query active Trendyol mapping capabilities via TanStack Query. */
+export function useProviderCapabilitiesQuery(
+  transport?: SearchApiTransport,
+  enabled = true,
+): UseQueryResult<ProviderCapabilitiesResponse, Error> {
+  const activeQueryClient = useResolvedQueryClient();
+  const resolvedTransport = useMemo(
+    () => transport ?? resolveDefaultSearchTransport(),
+    [transport],
+  );
+
+  return useQuery<ProviderCapabilitiesResponse, Error>(
+    {
+      queryKey: hehQueryKeys.capabilities(),
+      enabled,
+      queryFn: ({ signal }) => {
+        if (!resolvedTransport.getCapabilities) {
+          throw new Error("Capabilities endpoint is unavailable on this transport");
+        }
+        return resolvedTransport.getCapabilities(signal);
+      },
+    },
+    activeQueryClient,
+  );
+}
+
+/** Query fail-open readiness via TanStack Query. */
+export function useBackendReadinessQuery(
+  transport?: SearchApiTransport,
+  enabled = true,
+): UseQueryResult<ReadinessResponse, Error> {
+  const activeQueryClient = useResolvedQueryClient();
+  const resolvedTransport = useMemo(
+    () => transport ?? resolveDefaultSearchTransport(),
+    [transport],
+  );
+
+  return useQuery<ReadinessResponse, Error>(
+    {
+      queryKey: hehQueryKeys.healthReady(),
+      enabled,
+      queryFn: ({ signal }) => {
+        if (!resolvedTransport.getHealthReady) {
+          throw new Error("Health readiness endpoint is unavailable on this transport");
+        }
+        return resolvedTransport.getHealthReady(signal);
+      },
+    },
+    activeQueryClient,
+  );
+}
+
 export interface UseSearchFlowOptions {
   readonly transport?: SearchApiTransport;
+  readonly queryClient?: QueryClient;
   readonly openUrl?: (url: string) => Promise<void>;
+  readonly redirectDeps?: SafeRedirectDeps;
 }
 
 export interface UseSearchFlowResult {
@@ -154,34 +281,59 @@ export interface UseSearchFlowResult {
   readonly intent: SearchIntentV2Output | null;
   readonly resolution: LinkResolution | null;
   readonly chips: readonly CriteriaChipViewModel[];
+  readonly criteriaGroups: readonly CriteriaGroupViewModel[];
   readonly summaryText: string | null;
   readonly ctaLabel: string;
   readonly warnings: readonly string[];
   readonly errorMessage: string | null;
   readonly externalOpenError: string | null;
+  readonly lastRequestId: string | null;
   readonly canRestore: boolean;
   readonly runParse: (text: string, inputSource?: "text" | "voice") => Promise<void>;
   readonly removeCriterion: (criterionId: string) => Promise<void>;
+  readonly removeOrOption: (criterionId: string, optionKey: string) => Promise<void>;
+  readonly updatePriceRange: (
+    criterionId: string,
+    minAmount: string | null,
+    maxAmount: string | null,
+  ) => Promise<void>;
   readonly restoreLastRemoved: () => Promise<void>;
   readonly openExternalResult: () => Promise<boolean>;
+  readonly clearError: () => void;
   readonly reset: () => void;
 }
 
 /**
- * 1-RTT search flow hook enforcing single-flight parse/resolve calls,
- * out-of-order response discarding, edit-only /resolve, undo restore, and explicit redirect safety.
+ * TanStack Query backed 1-RTT search flow hook enforcing single-flight parse/resolve calls,
+ * identical in-flight deduplication, out-of-order cancellation, edit-only /resolve, and redirect safety.
  */
 export function useSearchFlow(options?: UseSearchFlowOptions): UseSearchFlowResult {
-  const transportRef = useRef<SearchApiTransport>(options?.transport ?? new MockSearchTransport());
-  const openUrlRef = useRef<(url: string) => Promise<void>>(
-    options?.openUrl ??
-      (async (url) => {
-        await Linking.openURL(url);
-      }),
+  const queryClient = useResolvedQueryClient(options?.queryClient);
+
+  const transportRef = useRef<SearchApiTransport>(
+    options?.transport ?? resolveDefaultSearchTransport(),
   );
+  useEffect(() => {
+    if (options?.transport) {
+      transportRef.current = options.transport;
+    }
+  }, [options?.transport]);
+
+  const redirectDepsRef = useRef<SafeRedirectDeps>(buildSafeRedirectDeps(options));
+  useEffect(() => {
+    redirectDepsRef.current = buildSafeRedirectDeps({
+      redirectDeps: options?.redirectDeps,
+      openUrl: options?.openUrl,
+    });
+  }, [options?.openUrl, options?.redirectDeps]);
 
   const abortRef = useRef<AbortController | null>(null);
   const requestSeqRef = useRef<number>(0);
+  const inFlightParseRef = useRef<{
+    readonly dedupeKey: string;
+    readonly promise: Promise<void>;
+    readonly signal: AbortSignal;
+  } | null>(null);
   const openingRef = useRef<boolean>(false);
 
   const [phase, setPhase] = useState<SearchFlowPhase>("idle");
@@ -189,164 +341,234 @@ export function useSearchFlow(options?: UseSearchFlowOptions): UseSearchFlowResu
   const [undoSnapshot, setUndoSnapshot] = useState<SearchParseResponse | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [externalOpenError, setExternalOpenError] = useState<string | null>(null);
+  const [lastRequestId, setLastRequestId] = useState<string | null>(null);
+
+  const resolveMutation = useMutation<
+    SearchResolveResponse,
+    unknown,
+    { readonly payload: SearchResolveRequest; readonly signal: AbortSignal }
+  >(
+    {
+      mutationFn: ({ payload, signal }) => transportRef.current.resolveSearch(payload, signal),
+      retry: false,
+    },
+    queryClient,
+  );
 
   useEffect(() => {
     return () => {
       abortRef.current?.abort();
+      inFlightParseRef.current = null;
     };
   }, []);
 
-  const runParse = useCallback(async (text: string, inputSource: "text" | "voice" = "text") => {
-    const trimmed = text.trim();
-    if (!trimmed) {
-      return;
-    }
-
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-    const reqSeq = ++requestSeqRef.current;
-
-    setPhase("parsing");
-    setErrorMessage(null);
-    setExternalOpenError(null);
-    setUndoSnapshot(null);
-
-    try {
-      const response = await transportRef.current.parseSearch(
-        {
-          text: trimmed,
-          locale: "tr-TR",
-          input_source: inputSource,
-        },
-        controller.signal,
-      );
-
-      if (reqSeq !== requestSeqRef.current || controller.signal.aborted) {
+  const runParse = useCallback(
+    async (text: string, inputSource: "text" | "voice" = "text") => {
+      const trimmed = text.trim();
+      if (!trimmed) {
         return;
       }
 
-      setParseState(response);
-      setPhase("reviewing");
-    } catch (err) {
-      if (reqSeq !== requestSeqRef.current || controller.signal.aborted) {
-        return;
+      const dedupeKey = `${inputSource}:${trimmed}`;
+      const existing = inFlightParseRef.current;
+      if (existing && existing.dedupeKey === dedupeKey && !existing.signal.aborted) {
+        return existing.promise;
       }
-      setErrorMessage(mapFlowErrorMessage(err));
-      setPhase("error");
-    }
-  }, []);
-
-  const removeCriterion = useCallback(
-    async (criterionId: string) => {
-      if (!parseState) {
-        return;
-      }
-
-      const previousSnapshot = parseState;
-      const existingCriteria = parseState.intent.criteria ?? [];
-      const removedCriterion = existingCriteria.find((crit) => crit.id === criterionId);
-      const nextCriteria = existingCriteria.filter((crit) => crit.id !== criterionId);
-      const hasRemainingCategory = nextCriteria.some(
-        (crit) => crit.field === "category" && crit.operator !== "not_in",
-      );
-      const nextIntentOutput: SearchIntentV2Output = {
-        ...parseState.intent,
-        category_key:
-          removedCriterion?.field === "category" || !hasRemainingCategory
-            ? null
-            : parseState.intent.category_key,
-        criteria: nextCriteria,
-        logic_groups: (parseState.intent.logic_groups ?? [])
-          .map((group) => ({
-            ...group,
-            criterion_ids: group.criterion_ids.filter((id) => id !== criterionId),
-          }))
-          .filter((group) => group.criterion_ids.length > 0),
-      };
 
       abortRef.current?.abort();
+      void queryClient.cancelQueries({ queryKey: hehQueryKeys.searchParseRoot() });
+
       const controller = new AbortController();
       abortRef.current = controller;
       const reqSeq = ++requestSeqRef.current;
+      const clientRequestId = createClientRequestId("parse");
+
+      setPhase("parsing");
+      setErrorMessage(null);
+      setExternalOpenError(null);
+      setUndoSnapshot(null);
+      setLastRequestId(clientRequestId);
+
+      const parsePromise = (async () => {
+        try {
+          const response = await queryClient.fetchQuery<SearchParseResponse>({
+            queryKey: hehQueryKeys.searchParse(trimmed, inputSource),
+            staleTime: 0,
+            retry: false,
+            queryFn: ({ signal: rqSignal }) => {
+              const linked = linkAbortSignals(controller.signal, rqSignal);
+              return transportRef.current
+                .parseSearch(
+                  {
+                    text: trimmed,
+                    locale: "tr-TR",
+                    input_source: inputSource,
+                    client_request_id: clientRequestId,
+                  },
+                  linked.signal,
+                )
+                .finally(linked.cleanup);
+            },
+          });
+
+          if (reqSeq !== requestSeqRef.current || controller.signal.aborted) {
+            return;
+          }
+
+          setParseState(response);
+          setLastRequestId(response.request_id);
+          setPhase("reviewing");
+        } catch (err) {
+          if (reqSeq !== requestSeqRef.current || controller.signal.aborted || isAbortError(err)) {
+            return;
+          }
+          setErrorMessage(mapFlowErrorMessage(err));
+          if (err instanceof HehApiError && err.requestId) {
+            setLastRequestId(err.requestId);
+          }
+          setPhase("error");
+        } finally {
+          if (inFlightParseRef.current?.signal === controller.signal) {
+            inFlightParseRef.current = null;
+          }
+        }
+      })();
+
+      inFlightParseRef.current = {
+        dedupeKey,
+        promise: parsePromise,
+        signal: controller.signal,
+      };
+      return parsePromise;
+    },
+    [queryClient],
+  );
+
+  const executeResolveEdit = useCallback(
+    async (
+      baseState: SearchParseResponse,
+      nextIntent: SearchIntentV2Output,
+      nextUndoSnapshot: SearchParseResponse | null,
+    ) => {
+      if ((nextIntent.criteria ?? []).length === 0) {
+        abortRef.current?.abort();
+        inFlightParseRef.current = null;
+        requestSeqRef.current += 1;
+        setUndoSnapshot(nextUndoSnapshot);
+        setParseState({
+          ...baseState,
+          intent: nextIntent,
+          resolution: {
+            ...baseState.resolution,
+            url: "",
+            applied_filters: [],
+            query_only: [],
+            unsupported: [],
+            warning_level: "none",
+          },
+        });
+        setErrorMessage(null);
+        setExternalOpenError(null);
+        setPhase("reviewing");
+        return;
+      }
+
+      abortRef.current?.abort();
+      inFlightParseRef.current = null;
+      const controller = new AbortController();
+      abortRef.current = controller;
+      const reqSeq = ++requestSeqRef.current;
+      const clientRequestId = createClientRequestId("resolve");
 
       setPhase("resolving");
       setErrorMessage(null);
       setExternalOpenError(null);
+      setLastRequestId(clientRequestId);
 
       try {
-        const resolved = await transportRef.current.resolveSearch(
-          {
-            intent: toInputIntent(nextIntentOutput),
-            mapping_version: parseState.resolution.mapping_version,
+        const resolved = await resolveMutation.mutateAsync({
+          payload: {
+            intent: toInputIntent(nextIntent),
+            mapping_version: baseState.resolution.mapping_version,
+            client_request_id: clientRequestId,
           },
-          controller.signal,
-        );
+          signal: controller.signal,
+        });
 
         if (reqSeq !== requestSeqRef.current || controller.signal.aborted) {
           return;
         }
 
-        setUndoSnapshot(previousSnapshot);
+        setUndoSnapshot(nextUndoSnapshot);
         setParseState({
-          ...parseState,
+          ...baseState,
           request_id: resolved.request_id,
           intent: resolved.intent,
           resolution: resolved.resolution,
         });
+        setLastRequestId(resolved.request_id);
         setPhase("reviewing");
       } catch (err) {
-        if (reqSeq !== requestSeqRef.current || controller.signal.aborted) {
+        if (reqSeq !== requestSeqRef.current || controller.signal.aborted || isAbortError(err)) {
           return;
         }
         setErrorMessage(mapFlowErrorMessage(err));
+        if (err instanceof HehApiError && err.requestId) {
+          setLastRequestId(err.requestId);
+        }
         setPhase("reviewing");
       }
     },
-    [parseState],
+    [resolveMutation],
+  );
+
+  const removeCriterion = useCallback(
+    async (criterionId: string) => {
+      if (!parseState || openingRef.current) {
+        return;
+      }
+      const nextIntentOutput = removeCriterionFromIntent(parseState.intent, criterionId);
+      await executeResolveEdit(parseState, nextIntentOutput, parseState);
+    },
+    [executeResolveEdit, parseState],
+  );
+
+  const removeOrOption = useCallback(
+    async (criterionId: string, optionKey: string) => {
+      if (!parseState || openingRef.current) {
+        return;
+      }
+      const nextIntentOutput = removeOptionFromOrIntent(parseState.intent, criterionId, optionKey);
+      await executeResolveEdit(parseState, nextIntentOutput, parseState);
+    },
+    [executeResolveEdit, parseState],
+  );
+
+  const updatePriceRange = useCallback(
+    async (criterionId: string, minAmount: string | null, maxAmount: string | null) => {
+      if (!parseState || openingRef.current) {
+        return;
+      }
+      const nextIntentOutput = updatePriceCriterionInIntent(
+        parseState.intent,
+        criterionId,
+        minAmount,
+        maxAmount,
+      );
+      if (!nextIntentOutput) {
+        return;
+      }
+      await executeResolveEdit(parseState, nextIntentOutput, parseState);
+    },
+    [executeResolveEdit, parseState],
   );
 
   const restoreLastRemoved = useCallback(async () => {
-    if (!undoSnapshot) {
+    if (!undoSnapshot || openingRef.current) {
       return;
     }
-
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-    const reqSeq = ++requestSeqRef.current;
-
-    setPhase("resolving");
-    setErrorMessage(null);
-    setExternalOpenError(null);
-
-    try {
-      const resolved = await transportRef.current.resolveSearch(
-        {
-          intent: toInputIntent(undoSnapshot.intent),
-          mapping_version: undoSnapshot.resolution.mapping_version,
-        },
-        controller.signal,
-      );
-      if (reqSeq !== requestSeqRef.current || controller.signal.aborted) {
-        return;
-      }
-      setParseState({
-        ...undoSnapshot,
-        request_id: resolved.request_id,
-        intent: resolved.intent,
-        resolution: resolved.resolution,
-      });
-      setUndoSnapshot(null);
-      setPhase("reviewing");
-    } catch (err) {
-      if (reqSeq !== requestSeqRef.current || controller.signal.aborted) {
-        return;
-      }
-      setErrorMessage(mapFlowErrorMessage(err));
-      setPhase("reviewing");
-    }
-  }, [undoSnapshot]);
+    await executeResolveEdit(undoSnapshot, undoSnapshot.intent, null);
+  }, [executeResolveEdit, undoSnapshot]);
 
   const openExternalResult = useCallback(async (): Promise<boolean> => {
     if (openingRef.current) {
@@ -354,7 +576,7 @@ export function useSearchFlow(options?: UseSearchFlowOptions): UseSearchFlowResu
     }
     const targetUrl = parseState?.resolution.url;
     if (!targetUrl || !validateExternalProviderUrl(targetUrl)) {
-      setExternalOpenError("Bağlantı açılamadı.");
+      setExternalOpenError("Güvenli Trendyol bağlantısı doğrulanamadı.");
       return false;
     }
 
@@ -363,11 +585,14 @@ export function useSearchFlow(options?: UseSearchFlowOptions): UseSearchFlowResu
     setPhase("opening_external");
     setExternalOpenError(null);
     try {
-      await openUrlRef.current(targetUrl);
+      const outcome = await launchSafeProviderRedirect(targetUrl, redirectDepsRef.current);
       if (reqSeq === requestSeqRef.current) {
+        if (!outcome.opened) {
+          setExternalOpenError(outcome.errorMessage ?? "Bağlantı açılamadı.");
+        }
         setPhase("reviewing");
       }
-      return true;
+      return outcome.opened;
     } catch {
       if (reqSeq === requestSeqRef.current) {
         setExternalOpenError("Bağlantı açılamadı.");
@@ -379,21 +604,35 @@ export function useSearchFlow(options?: UseSearchFlowOptions): UseSearchFlowResu
     }
   }, [parseState]);
 
+  const clearError = useCallback(() => {
+    setErrorMessage(null);
+    setExternalOpenError(null);
+    setPhase((prev) => (prev === "error" ? (parseState ? "reviewing" : "idle") : prev));
+  }, [parseState]);
+
   const reset = useCallback(() => {
     abortRef.current?.abort();
+    inFlightParseRef.current = null;
+    void queryClient.cancelQueries({ queryKey: hehQueryKeys.searchParseRoot() });
     requestSeqRef.current += 1;
     openingRef.current = false;
     setParseState(null);
     setUndoSnapshot(null);
     setErrorMessage(null);
     setExternalOpenError(null);
+    setLastRequestId(null);
     setPhase("idle");
-  }, []);
+  }, [queryClient]);
 
   const resolution = parseState?.resolution ?? null;
   const chips = useMemo(
     () => (resolution ? buildCriteriaViewModels(resolution) : []),
     [resolution],
+  );
+  const activeIntent = parseState?.intent ?? null;
+  const criteriaGroups = useMemo(
+    () => buildCriteriaGroupViewModels(chips, activeIntent),
+    [activeIntent, chips],
   );
   const summaryText = useMemo(
     () => (resolution ? buildResolutionSummaryText(resolution) : null),
@@ -406,19 +645,24 @@ export function useSearchFlow(options?: UseSearchFlowOptions): UseSearchFlowResu
 
   return {
     phase,
-    intent: parseState?.intent ?? null,
+    intent: activeIntent,
     resolution,
     chips,
+    criteriaGroups,
     summaryText,
     ctaLabel,
     warnings: parseState?.warnings ?? [],
     errorMessage,
     externalOpenError,
+    lastRequestId,
     canRestore: undoSnapshot !== null,
     runParse,
     removeCriterion,
+    removeOrOption,
+    updatePriceRange,
     restoreLastRemoved,
     openExternalResult,
+    clearError,
     reset,
   };
 }

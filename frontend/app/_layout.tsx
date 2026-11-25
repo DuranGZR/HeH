@@ -1,7 +1,9 @@
+import { QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
+import { getSharedQueryClient } from "@/api";
 import { HehThemeProvider, useHehTheme } from "@/theme";
 
 function ThemedRootStack() {
@@ -21,13 +23,15 @@ function ThemedRootStack() {
   );
 }
 
-/** Root navigation layout wrapped in theme, contrast, and safe-area providers. */
+/** Root navigation layout wrapped in query cache, theme, contrast, and safe-area providers. */
 export default function RootLayout() {
   return (
     <SafeAreaProvider>
-      <HehThemeProvider>
-        <ThemedRootStack />
-      </HehThemeProvider>
+      <QueryClientProvider client={getSharedQueryClient()}>
+        <HehThemeProvider>
+          <ThemedRootStack />
+        </HehThemeProvider>
+      </QueryClientProvider>
     </SafeAreaProvider>
   );
 }
