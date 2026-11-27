@@ -1,4 +1,4 @@
-# heh. — Doğal Türkçe Ürün Arama Asistanı
+# HeH. — Doğal Türkçe Ürün Arama Asistanı
 
 **heh.**, kullanıcıların sesli veya yazılı doğal Türkçe ile tarif ettiği ürün kriterlerini yapısal kurallara ayıran, düzenlenebilir şekilde sunan ve açık kullanıcı onayıyla güvenli HTTPS Trendyol arama bağlantısı üreten minimalist mobil uygulamadır.
 
